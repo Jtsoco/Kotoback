@@ -3,4 +3,6 @@ dj-rest-auth==7.2.0
 Django==6.0.3
 django-allauth==65.15.0
 djangorestframework==3.16.1
+psycopg[binary]==3.2.10
+python-dotenv==1.1.1
 sqlparse==0.5.5
