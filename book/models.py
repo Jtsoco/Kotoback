@@ -1,3 +1,4 @@
+import string
 from django.conf import settings
 from django.core.exceptions import ValidationError
 from django.db import models
@@ -88,7 +89,14 @@ class FlashCard(models.Model):
 
     front_data = models.JSONField()
     back_data = models.JSONField()
+    """
+    front and back data langauge depends on langauge, but both have:
 
+        studyWord: string;
+        definition?: string;
+        phoneticText?: string; (think furigana for kanji)
+        exampleSentence?: string;
+    """
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
