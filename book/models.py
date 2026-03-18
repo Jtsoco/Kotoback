@@ -32,6 +32,9 @@ class BookCard(models.Model):
     )
     book = models.ForeignKey(Book, on_delete=models.CASCADE, related_name="bookcards")
 
+    # When the user last studied this bookcard (for homepage ordering).
+    last_studied_at = models.DateTimeField(null=True, blank=True)
+
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
