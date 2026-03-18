@@ -111,3 +111,8 @@ class FlashCard(models.Model):
     def clean(self) -> None:
         if self.front_language == self.back_language:
             raise ValidationError("front_language and back_language cannot be the same")
+        # make sure front end and back end of flashcards have studyWord
+        if "studyWord" not in self.front_data:
+            raise ValidationError("front_data must have studyWord")
+        if "studyWord" not in self.back_data:
+            raise ValidationError("back_data must have studyWord")
