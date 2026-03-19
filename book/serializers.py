@@ -1,10 +1,12 @@
 from django.db.models import Count
 from rest_framework import serializers
 
+from utils.serializers import CamelCaseInputMixin
+
 from .models import Book, BookCard, DefaultFlashCard, FlashCard
 
 
-class DefaultFlashCardSerializer(serializers.ModelSerializer):
+class DefaultFlashCardSerializer(CamelCaseInputMixin, serializers.ModelSerializer):
     class Meta:
         model = DefaultFlashCard
         fields = [
@@ -16,7 +18,36 @@ class DefaultFlashCardSerializer(serializers.ModelSerializer):
         ]
 
 
-class FlashCardSerializer(serializers.ModelSerializer):
+class FlashCardSerializer(CamelCaseInputMixin, serializers.ModelSerializer):
+    def _require_study_word(self, data: object) -> None:
+        if not isinstance(data, dict):
+            raise serializers.ValidationError("frontData/backData must be a JSON object.")
+        if "studyWord" not in data and "StudyWord" not in data:
+            raise serializers.ValidationError(
+                "frontData/backData must include `studyWord` (or `StudyWord`)."
+            )
+
+    def validate(self, attrs):
+        front_language = attrs.get("front_language", None)
+        back_language = attrs.get("back_language", None)
+        if (
+            front_language is not None
+            and back_language is not None
+            and front_language == back_language
+        ):
+            raise serializers.ValidationError(
+                "front_language and back_language cannot be the same"
+            )
+
+        # For partial updates we may only receive one side.
+        front_data = attrs.get("front_data", None)
+        back_data = attrs.get("back_data", None)
+        if front_data is not None:
+            self._require_study_word(front_data)
+        if back_data is not None:
+            self._require_study_word(back_data)
+        return attrs
+
     class Meta:
         model = FlashCard
         fields = [
@@ -54,7 +85,7 @@ class BookSummarySerializer(serializers.ModelSerializer):
         ]
 
 
-class BookCardSerializer(serializers.ModelSerializer):
+class BookCardSerializer(CamelCaseInputMixin, serializers.ModelSerializer):
     book = BookSummarySerializer(read_only=True)
     book_id = serializers.PrimaryKeyRelatedField(
         queryset=Book.objects.all(),
@@ -74,10 +105,10 @@ class BookCardSerializer(serializers.ModelSerializer):
             "updated_at",
             "flashcard_count",
         ]
-        read_only_fields = ["created_at", "updated_at"]
+        read_only_fields = ["last_studied_at", "created_at", "updated_at"]
 
 
-class HomepageBookCardSerializer(serializers.ModelSerializer):
+class HomepageBookCardSerializer(CamelCaseInputMixin, serializers.ModelSerializer):
     book = BookSummarySerializer(read_only=True)
     flashcard_count = serializers.IntegerField(read_only=True)
 

@@ -185,6 +185,7 @@ REST_FRAMEWORK = {
         'rest_framework.authentication.TokenAuthentication',
     ],
     'DEFAULT_RENDERER_CLASSES': [
+        'utils.renderers.CamelCaseJSONRenderer',
         'rest_framework.renderers.BrowsableAPIRenderer',
     ],
 }

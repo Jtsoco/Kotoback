@@ -1,3 +1,4 @@
+from collections.abc import Mapping
 from typing import Any
 
 from rest_framework.renderers import JSONRenderer
@@ -11,7 +12,7 @@ def _snake_to_camel(s: str) -> str:
 
 
 def _transform_keys(obj: Any) -> Any:
-    if isinstance(obj, dict):
+    if isinstance(obj, Mapping):
         return {
             _snake_to_camel(str(k)): _transform_keys(v)
             for k, v in obj.items()

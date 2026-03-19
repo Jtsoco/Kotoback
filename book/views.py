@@ -1,5 +1,6 @@
+from django.shortcuts import get_object_or_404
 from django.utils import timezone
-from rest_framework import generics, permissions
+from rest_framework import generics, permissions, status
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
@@ -89,16 +90,39 @@ class FlashCardListCreateView(generics.ListCreateAPIView):
             bookcard_id=bookcard_id,
         )
 
-    def perform_create(self, serializer):
+    def _get_bookcard_or_404(self) -> BookCard:
         bookcard_id = self.kwargs["bookcard_pk"]
-        bookcard = BookCard.objects.get(
-            id=bookcard_id,
-            user=self.request.user,
+        return get_object_or_404(BookCard, id=bookcard_id, user=self.request.user)
+
+    def create(self, request, *args, **kwargs):
+        """
+        Supports both:
+        - single POST with an object payload
+        - bulk POST with a list payload (multiple flashcards to the same bookcard)
+        """
+
+        bookcard = self._get_bookcard_or_404()
+        many = isinstance(request.data, list)
+        serializer = self.get_serializer(data=request.data, many=many)
+        serializer.is_valid(raise_exception=True)
+
+        if many:
+            created = [
+                FlashCard.objects.create(bookcard=bookcard, **item)
+                for item in serializer.validated_data
+            ]
+            bookcard.last_studied_at = timezone.now()
+            bookcard.save(update_fields=["last_studied_at"])
+            out_serializer = FlashCardSerializer(created, many=True)
+            return Response(out_serializer.data, status=status.HTTP_201_CREATED)
+
+        created = FlashCard.objects.create(
+            bookcard=bookcard, **serializer.validated_data
         )
-        serializer.save(bookcard=bookcard)
-        # Update last_studied_at as a simple heuristic.
         bookcard.last_studied_at = timezone.now()
         bookcard.save(update_fields=["last_studied_at"])
+        out_serializer = FlashCardSerializer(created)
+        return Response(out_serializer.data, status=status.HTTP_201_CREATED)
 
 
 class FlashCardDetailView(generics.RetrieveUpdateDestroyAPIView):
