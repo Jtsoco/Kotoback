@@ -200,3 +200,33 @@ class DefaultViewsAndFlashcardsTests(APITestCase):
         resp = self.client.delete(detail_url)
         self.assertEqual(resp.status_code, 204)
         self.assertFalse(FlashCard.objects.filter(id=created_id).exists())
+
+    # test if bulk flashcards can be created using view post
+    def test_bulk_flashcard_create(self):
+        url = reverse(
+            "book:flashcard-list", kwargs={"bookcard_pk": self.bookcard1.id}
+        )
+        payload = [
+            {
+                "frontLanguage": "en",
+                "backLanguage": "ja",
+                "frontData": study_payload("c"),
+                "backData": study_payload("シー"),
+            },
+            {
+                "frontLanguage": "en",
+                "backLanguage": "ja",
+                "frontData": study_payload("d"),
+                "backData": study_payload("ディー"),
+            },
+        ]
+        resp = self.client.post(url, payload, format="json")
+        self.assertEqual(resp.status_code, 201)
+        self.assertEqual(FlashCard.objects.filter(bookcard=self.bookcard1).count(), 3)
+        self.assertIn("frontLanguage", resp.data[0])
+        self.assertIn("backLanguage", resp.data[0])
+        self.assertIn("frontData", resp.data[0])
+        self.assertIn("backData", resp.data[0])
+        self.assertIn("createdAt", resp.data[0])
+        self.assertIn("updatedAt", resp.data[0])
+        self.assertIn("id", resp.data[0])

@@ -1,4 +1,5 @@
 from django.shortcuts import get_object_or_404
+from django.db import transaction
 from django.utils import timezone
 from rest_framework import generics, permissions, status
 from rest_framework.response import Response
@@ -92,13 +93,18 @@ class FlashCardListCreateView(generics.ListCreateAPIView):
 
     def _get_bookcard_or_404(self) -> BookCard:
         bookcard_id = self.kwargs["bookcard_pk"]
-        return get_object_or_404(BookCard, id=bookcard_id, user=self.request.user)
+        return get_object_or_404(
+            BookCard,
+            id=bookcard_id,
+            user=self.request.user,
+        )
 
     def create(self, request, *args, **kwargs):
         """
         Supports both:
         - single POST with an object payload
-        - bulk POST with a list payload (multiple flashcards to the same bookcard)
+                - bulk POST with a list payload
+                    (multiple flashcards to the same bookcard)
         """
 
         bookcard = self._get_bookcard_or_404()
@@ -107,14 +113,18 @@ class FlashCardListCreateView(generics.ListCreateAPIView):
         serializer.is_valid(raise_exception=True)
 
         if many:
-            created = [
-                FlashCard.objects.create(bookcard=bookcard, **item)
-                for item in serializer.validated_data
-            ]
-            bookcard.last_studied_at = timezone.now()
-            bookcard.save(update_fields=["last_studied_at"])
+            with transaction.atomic():
+                created = [
+                    FlashCard.objects.create(bookcard=bookcard, **item)
+                    for item in serializer.validated_data
+                ]
+                bookcard.last_studied_at = timezone.now()
+                bookcard.save(update_fields=["last_studied_at"])
             out_serializer = FlashCardSerializer(created, many=True)
-            return Response(out_serializer.data, status=status.HTTP_201_CREATED)
+            return Response(
+                out_serializer.data,
+                status=status.HTTP_201_CREATED,
+            )
 
         created = FlashCard.objects.create(
             bookcard=bookcard, **serializer.validated_data
