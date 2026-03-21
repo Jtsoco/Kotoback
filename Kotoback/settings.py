@@ -61,6 +61,7 @@ INSTALLED_APPS = [
     'dj_rest_auth.registration',
     'book',
     'study',
+    'django_celery_results',
 ]
 
 SITE_ID = 1
@@ -189,3 +190,13 @@ REST_FRAMEWORK = {
         'rest_framework.renderers.BrowsableAPIRenderer',
     ],
 }
+
+# ---------------------------------------------------------------------------
+# Celery
+# ---------------------------------------------------------------------------
+CELERY_BROKER_URL = os.environ.get('REDIS_HOST')
+CELERY_RESULT_BACKEND = 'django-db'
+CELERY_CACHE_BACKEND = 'default'
+CELERY_ACCEPT_CONTENT = ['json']
+CELERY_TASK_SERIALIZER = 'json'
+CELERY_RESULT_SERIALIZER = 'json'

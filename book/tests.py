@@ -229,4 +229,4 @@ class DefaultViewsAndFlashcardsTests(APITestCase):
         self.assertIn("backData", resp.data[0])
         self.assertIn("createdAt", resp.data[0])
         self.assertIn("updatedAt", resp.data[0])
-        self.assertIn("id", resp.data[0])
+        self.assertIn("id", resp.data[ 0])
