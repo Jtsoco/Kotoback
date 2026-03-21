@@ -1,2 +1,7 @@
 .env
 plans/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.db
