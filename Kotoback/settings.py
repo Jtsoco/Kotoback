@@ -194,7 +194,10 @@ REST_FRAMEWORK = {
 # ---------------------------------------------------------------------------
 # Celery
 # ---------------------------------------------------------------------------
-CELERY_BROKER_URL = os.environ.get('REDIS_HOST')
+CELERY_BROKER_URL = os.environ.get(
+    'CELERY_BROKER_URL',
+    os.environ.get('REDIS_HOST', 'redis://127.0.0.1:6379/0'),
+)
 CELERY_RESULT_BACKEND = 'django-db'
 CELERY_CACHE_BACKEND = 'default'
 CELERY_ACCEPT_CONTENT = ['json']
@@ -204,8 +207,9 @@ CELERY_RESULT_SERIALIZER = 'json'
 
 # File upload settings
 MEDIA_URL = '/media/'
-MEDIA_ROOT = BASE_DIR / 'media'
+MEDIA_ROOT = Path(os.environ.get('MEDIA_ROOT', str(BASE_DIR / 'media')))
 
 
 DATA_UPLOAD_MAX_MEMORY_SIZE = 25 * 1024 * 1024  # 25 MB
-# anything larger than causes a SuspiciousOperation: RequestDataTooBig to be raised by DJANGO, which we catch and return a 413 Payload Too Large response to the client. This is important to prevent clients from uploading excessively large files that could overwhelm the server.
+# Anything larger raises RequestDataTooBig; return 413 to the client.
+# This prevents oversized uploads from overwhelming the server.
