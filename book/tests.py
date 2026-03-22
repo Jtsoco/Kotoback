@@ -1,3 +1,5 @@
+import shutil
+import tempfile
 from datetime import timedelta
 from unittest.mock import patch
 
@@ -351,6 +353,19 @@ class IngestionJobSerializerTests(APITestCase):
 
 
 class IngestionJobApiTests(APITestCase):
+    @classmethod
+    def setUpClass(cls):
+        super().setUpClass()
+        cls._media_root = tempfile.mkdtemp()
+        cls._override = override_settings(MEDIA_ROOT=cls._media_root)
+        cls._override.enable()
+
+    @classmethod
+    def tearDownClass(cls):
+        cls._override.disable()
+        shutil.rmtree(cls._media_root, ignore_errors=True)
+        super().tearDownClass()
+
     def setUp(self):
         User = get_user_model()
         self.user = User.objects.create_user(

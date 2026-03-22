@@ -221,7 +221,7 @@ CELERY_RESULT_SERIALIZER = 'json'
 
 # File upload settings
 MEDIA_URL = '/media/'
-MEDIA_ROOT = Path(os.environ.get('MEDIA_ROOT', str(BASE_DIR / 'media')))
+MEDIA_ROOT = Path(os.environ.get('MEDIA_ROOT') or str(BASE_DIR / 'media'))
 
 # Maximum request body size accepted by Django before RequestDataTooBig.
 DATA_UPLOAD_MAX_MEMORY_SIZE = env_int(
