@@ -1,4 +1,5 @@
 from datetime import timedelta
+from unittest.mock import patch
 
 from django.contrib.auth import get_user_model
 from django.test import override_settings
@@ -10,6 +11,12 @@ from rest_framework.test import APITestCase
 from rest_framework import serializers
 
 from .models import Book, BookCard, FlashCard
+from .models import IngestionJob, IngestionJobStatus
+from .serializers import (
+    IngestionJobResultSerializer,
+    IngestionJobStatusSerializer,
+    IngestionJobUploadSerializer,
+)
 from .upload_validators import validate_epub_upload
 
 
@@ -270,3 +277,179 @@ class EpubUploadValidatorTests(APITestCase):
 
         validated = validate_epub_upload(upload)
         self.assertEqual(validated.name, "book.epub")
+
+
+class IngestionJobSerializerTests(APITestCase):
+    def setUp(self):
+        User = get_user_model()
+        self.user = User.objects.create_user(
+            username="ingestion-user",
+            email="ingestion@example.com",
+            password="pass12345",
+        )
+
+    def test_upload_serializer_rejects_same_source_and_target_language(self):
+        serializer = IngestionJobUploadSerializer(
+            data={
+                "file": SimpleUploadedFile(
+                    "book.epub",
+                    b"PK\x03\x04",
+                    content_type="application/epub+zip",
+                ),
+                "sourceLanguage": "en",
+                "targetLanguage": "en",
+                "cardCountTarget": 100,
+                "rarityProfile": "standard",
+            }
+        )
+
+        self.assertFalse(serializer.is_valid())
+        self.assertIn("non_field_errors", serializer.errors)
+
+    def test_upload_serializer_accepts_valid_payload(self):
+        serializer = IngestionJobUploadSerializer(
+            data={
+                "file": SimpleUploadedFile(
+                    "book.epub",
+                    b"PK\x03\x04",
+                    content_type="application/epub+zip",
+                ),
+                "sourceLanguage": "en",
+                "targetLanguage": "ja",
+                "cardCountTarget": 100,
+                "rarityProfile": "standard",
+            }
+        )
+
+        self.assertTrue(serializer.is_valid(), serializer.errors)
+
+    def test_status_and_result_serializers_expose_read_only_fields(self):
+        job = IngestionJob.objects.create(
+            user=self.user,
+            source_file=SimpleUploadedFile(
+                "book.epub",
+                b"PK\x03\x04",
+                content_type="application/epub+zip",
+            ),
+            source_language="en",
+            target_language="ja",
+            status=IngestionJobStatus.PROCESSING,
+            progress=40,
+            current_stage="tokenizing",
+            summary={"word_count": 1200},
+            result_payload={"candidates": []},
+            error_payload={},
+        )
+
+        status_data = IngestionJobStatusSerializer(job).data
+        result_data = IngestionJobResultSerializer(job).data
+
+        self.assertEqual(status_data["status"], IngestionJobStatus.PROCESSING)
+        self.assertEqual(status_data["progress"], 40)
+        self.assertIn("summary", status_data)
+        self.assertIn("resultPayload", result_data)
+
+
+class IngestionJobApiTests(APITestCase):
+    def setUp(self):
+        User = get_user_model()
+        self.user = User.objects.create_user(
+            username="ingestion-api-user",
+            email="ingestion-api@example.com",
+            password="pass12345",
+        )
+        self.user2 = User.objects.create_user(
+            username="ingestion-api-user2",
+            email="ingestion-api-user2@example.com",
+            password="pass12345",
+        )
+
+        token = Token.objects.create(user=self.user)
+        self.client.credentials(HTTP_AUTHORIZATION=f"Token {token.key}")
+
+    @patch("book.views.process_ingestion_job.delay")
+    def test_upload_creates_job_and_enqueues_task(self, mock_delay):
+        class MockAsyncResult:
+            id = "task-123"
+
+        mock_delay.return_value = MockAsyncResult()
+
+        url = reverse("book:ingestion-job-upload")
+        payload = {
+            "file": SimpleUploadedFile(
+                "book.epub",
+                b"PK\x03\x04",
+                content_type="application/epub+zip",
+            ),
+            "sourceLanguage": "en",
+            "targetLanguage": "ja",
+            "cardCountTarget": 100,
+            "rarityProfile": "standard",
+        }
+
+        with self.captureOnCommitCallbacks(execute=True):
+            response = self.client.post(url, payload, format="multipart")
+
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual(response.data["status"], IngestionJobStatus.QUEUED)
+        self.assertIn("id", response.data)
+
+        job = IngestionJob.objects.get(id=response.data["id"])
+        self.assertEqual(job.user_id, self.user.id)
+        self.assertEqual(job.status, IngestionJobStatus.QUEUED)
+        self.assertEqual(job.celery_task_id, "task-123")
+
+    def test_status_enforces_user_scope(self):
+        job = IngestionJob.objects.create(
+            user=self.user2,
+            source_file=SimpleUploadedFile(
+                "book.epub",
+                b"PK\x03\x04",
+                content_type="application/epub+zip",
+            ),
+            source_language="en",
+            target_language="ja",
+        )
+
+        url = reverse("book:ingestion-job-status", kwargs={"job_id": job.id})
+        response = self.client.get(url)
+        self.assertEqual(response.status_code, 404)
+
+    def test_result_returns_409_until_succeeded(self):
+        job = IngestionJob.objects.create(
+            user=self.user,
+            source_file=SimpleUploadedFile(
+                "book.epub",
+                b"PK\x03\x04",
+                content_type="application/epub+zip",
+            ),
+            source_language="en",
+            target_language="ja",
+            status=IngestionJobStatus.PROCESSING,
+            progress=60,
+        )
+
+        url = reverse("book:ingestion-job-result", kwargs={"job_id": job.id})
+        response = self.client.get(url)
+        self.assertEqual(response.status_code, 409)
+        self.assertEqual(response.data["status"], IngestionJobStatus.PROCESSING)
+
+    def test_cancel_marks_cancellable_job_cancelled(self):
+        job = IngestionJob.objects.create(
+            user=self.user,
+            source_file=SimpleUploadedFile(
+                "book.epub",
+                b"PK\x03\x04",
+                content_type="application/epub+zip",
+            ),
+            source_language="en",
+            target_language="ja",
+            status=IngestionJobStatus.QUEUED,
+        )
+
+        url = reverse("book:ingestion-job-cancel", kwargs={"job_id": job.id})
+        response = self.client.post(url, data={}, format="json")
+
+        self.assertEqual(response.status_code, 200)
+        job.refresh_from_db()
+        self.assertEqual(job.status, IngestionJobStatus.CANCELLED)
