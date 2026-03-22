@@ -15,6 +15,13 @@ from pathlib import Path
 
 from dotenv import load_dotenv
 
+
+def env_int(name: str, default: int) -> int:
+    value = os.environ.get(name)
+    if value in (None, ""):
+        return default
+    return int(value)
+
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
 
@@ -194,10 +201,17 @@ REST_FRAMEWORK = {
 # ---------------------------------------------------------------------------
 # Celery
 # ---------------------------------------------------------------------------
-CELERY_BROKER_URL = os.environ.get(
-    'CELERY_BROKER_URL',
-    os.environ.get('REDIS_HOST', 'redis://127.0.0.1:6379/0'),
+CELERY_BROKER_URL = (
+    os.environ.get('CELERY_BROKER_URL')
+    or os.environ.get('REDIS_HOST')
 )
+if not CELERY_BROKER_URL:
+    if DEBUG:
+        CELERY_BROKER_URL = 'redis://127.0.0.1:6379/0'
+    else:
+        raise RuntimeError(
+            'CELERY_BROKER_URL must be set when DJANGO_DEBUG is disabled.'
+        )
 CELERY_RESULT_BACKEND = 'django-db'
 CELERY_CACHE_BACKEND = 'default'
 CELERY_ACCEPT_CONTENT = ['json']
@@ -209,7 +223,20 @@ CELERY_RESULT_SERIALIZER = 'json'
 MEDIA_URL = '/media/'
 MEDIA_ROOT = Path(os.environ.get('MEDIA_ROOT', str(BASE_DIR / 'media')))
 
-
-DATA_UPLOAD_MAX_MEMORY_SIZE = 25 * 1024 * 1024  # 25 MB
+# Maximum request body size accepted by Django before RequestDataTooBig.
+DATA_UPLOAD_MAX_MEMORY_SIZE = env_int(
+    'DATA_UPLOAD_MAX_MEMORY_SIZE',
+    25 * 1024 * 1024,
+)
 # Anything larger raises RequestDataTooBig; return 413 to the client.
 # This prevents oversized uploads from overwhelming the server.
+
+# Files larger than this are streamed to disk instead of kept in RAM.
+FILE_UPLOAD_MAX_MEMORY_SIZE = env_int(
+    'FILE_UPLOAD_MAX_MEMORY_SIZE',
+    2 * 1024 * 1024,
+)
+# Files larger than this will be streamed to disk instead of kept in memory.
+
+# App-level max EPUB payload size for serializer/view validation.
+EPUB_MAX_UPLOAD_SIZE = env_int('EPUB_MAX_UPLOAD_SIZE', 25 * 1024 * 1024)

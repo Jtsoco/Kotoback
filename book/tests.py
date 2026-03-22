@@ -1,12 +1,16 @@
 from datetime import timedelta
 
 from django.contrib.auth import get_user_model
+from django.test import override_settings
 from django.urls import reverse
 from django.utils import timezone
+from django.core.files.uploadedfile import SimpleUploadedFile
 from rest_framework.authtoken.models import Token
 from rest_framework.test import APITestCase
+from rest_framework import serializers
 
 from .models import Book, BookCard, FlashCard
+from .upload_validators import validate_epub_upload
 
 
 def study_payload(word: str) -> dict:
@@ -201,8 +205,8 @@ class DefaultViewsAndFlashcardsTests(APITestCase):
         self.assertEqual(resp.status_code, 204)
         self.assertFalse(FlashCard.objects.filter(id=created_id).exists())
 
-    # test if bulk flashcards can be created using view post
-    def test_bulk_flashcard_create(self):
+    # Verify response fields for bulk flashcard create.
+    def test_bulk_flashcard_create_response_fields(self):
         url = reverse(
             "book:flashcard-list", kwargs={"bookcard_pk": self.bookcard1.id}
         )
@@ -222,11 +226,47 @@ class DefaultViewsAndFlashcardsTests(APITestCase):
         ]
         resp = self.client.post(url, payload, format="json")
         self.assertEqual(resp.status_code, 201)
-        self.assertEqual(FlashCard.objects.filter(bookcard=self.bookcard1).count(), 3)
+        self.assertEqual(
+            FlashCard.objects.filter(bookcard=self.bookcard1).count(),
+            3,
+        )
         self.assertIn("frontLanguage", resp.data[0])
         self.assertIn("backLanguage", resp.data[0])
         self.assertIn("frontData", resp.data[0])
         self.assertIn("backData", resp.data[0])
         self.assertIn("createdAt", resp.data[0])
         self.assertIn("updatedAt", resp.data[0])
-        self.assertIn("id", resp.data[ 0])
+        self.assertIn("id", resp.data[0])
+
+
+class EpubUploadValidatorTests(APITestCase):
+    def test_rejects_non_epub_extension(self):
+        upload = SimpleUploadedFile(
+            "not-epub.txt",
+            b"hello",
+            content_type="text/plain",
+        )
+
+        with self.assertRaises(serializers.ValidationError):
+            validate_epub_upload(upload)
+
+    @override_settings(EPUB_MAX_UPLOAD_SIZE=10)
+    def test_rejects_when_file_exceeds_limit(self):
+        upload = SimpleUploadedFile(
+            "book.epub",
+            b"01234567890",
+            content_type="application/epub+zip",
+        )
+
+        with self.assertRaises(serializers.ValidationError):
+            validate_epub_upload(upload)
+
+    def test_accepts_valid_epub_upload(self):
+        upload = SimpleUploadedFile(
+            "book.epub",
+            b"PK\x03\x04",
+            content_type="application/epub+zip",
+        )
+
+        validated = validate_epub_upload(upload)
+        self.assertEqual(validated.name, "book.epub")
