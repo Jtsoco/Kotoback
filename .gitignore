@@ -8,3 +8,5 @@ __pycache__/
 media/
 ingestion-jobs/
 .DS_Store
+db.sqlite3
+*.log
