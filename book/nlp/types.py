@@ -22,7 +22,7 @@ class HalfCandidate(TypedDict):
 
     base: str
     total_count: int
-    surface_counts: dict[str, int]
+    surface_forms: set[str]
     pos_counts: dict[str, int]
 
 
