@@ -6,6 +6,7 @@ from pathlib import Path
 from posixpath import dirname, join, normpath
 from zipfile import ZipFile
 
+from bs4 import BeautifulSoup
 from lxml import etree
 
 
@@ -82,6 +83,21 @@ def _get_spine_content_paths_from_zip(
     return spine_paths
 
 
+def _extract_chapter_text_from_zip(
+    zf: ZipFile,
+    chapter_path: str,
+) -> str:
+    """Return bulk visible text for one chapter XHTML file in the EPUB."""
+
+    chapter_bytes = zf.read(chapter_path)
+    soup = BeautifulSoup(chapter_bytes, "lxml")
+
+    for tag in soup(["script", "style", "head"]):
+        tag.decompose()
+
+    return soup.get_text(separator=" ", strip=True)
+
+
 def get_rootfile_path_from_epub(epub_path: str | Path) -> str:
     """
     Read META-INF/container.xml and return the OPF rootfile full-path.
@@ -108,3 +124,19 @@ def get_spine_content_paths(
 
     with ZipFile(epub_path) as zf:
         return _get_spine_content_paths_from_zip(zf, rootfile_path)
+
+
+def extract_chapter_text(
+    epub_path: str | Path,
+    chapter_path: str,
+) -> str:
+    """
+    Return bulk text content for a chapter path from the EPUB archive.
+
+    Args:
+        epub_path: Path to the `.epub` file on disk.
+        chapter_path: Internal archive path to one chapter XHTML file.
+    """
+
+    with ZipFile(epub_path) as zf:
+        return _extract_chapter_text_from_zip(zf, chapter_path)
