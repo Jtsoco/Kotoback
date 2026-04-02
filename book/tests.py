@@ -508,9 +508,9 @@ class IngestionTaskStageTests(APITestCase):
         job.refresh_from_db()
         self.assertEqual(job.status, IngestionJobStatus.CANCELLED)
 
-    def test_stage_extract_text_missing_file_raises_error(self):
+    def test_stage_extract_spine_missing_file_raises_error(self):
         """Verify extraction stage handles missing EPUB file."""
-        from .tasks import _stage_extract_text
+        from .tasks import _stage_extract_spine
 
         job = IngestionJob.objects.create(
             user=self.user,
@@ -529,11 +529,11 @@ class IngestionTaskStageTests(APITestCase):
             os.remove(job.source_file.path)
 
         with self.assertRaises(FileNotFoundError):
-            _stage_extract_text(job)
+            _stage_extract_spine(job)
 
-    def test_stage_extract_text_returns_required_keys(self):
+    def test_stage_extract_spine_returns_required_keys(self):
         """Verify extraction stage returns expected payload shape."""
-        from .tasks import _stage_extract_text
+        from .tasks import _stage_extract_spine
         from zipfile import ZipFile
         import io
 
@@ -577,7 +577,7 @@ class IngestionTaskStageTests(APITestCase):
             status=IngestionJobStatus.PROCESSING,
         )
 
-        result = _stage_extract_text(job)
+        result = _stage_extract_spine(job)
 
         self.assertIn("epub_path", result)
         self.assertIn("spine_paths", result)

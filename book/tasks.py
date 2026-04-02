@@ -60,7 +60,7 @@ def _check_cancelled(job: IngestionJob) -> None:
         raise JobCancelledError()
 
 
-def _stage_extract_text(job: IngestionJob) -> dict[str, Any]:
+def _stage_extract_spine(job: IngestionJob) -> dict[str, Any]:
     _set_stage(job, "extracting-text", 20)
 
     epub_path = Path(job.source_file.path)
@@ -319,7 +319,7 @@ def process_ingestion_job(self, job_id: int):
         job = _set_processing(job)
         _check_cancelled(job)
 
-        extracted = _stage_extract_text(job)
+        extracted = _stage_extract_spine(job)
         job = _get_job(job_id)
         _check_cancelled(job)
 

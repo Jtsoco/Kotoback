@@ -72,3 +72,38 @@ def normalize_filter_selection(
         "common_japanese": common_japanese,
         "include_newspaper_kanji": include_newspaper_kanji,
     }
+
+"""
+Ebook metadata tags are:
+dc:identifier id="uid"
+dc:date (represents the first publication date of this ebook)
+dc:title id="title"
+(title will have a property 'file-as' for ordering, and defines what it refines)
+<meta property="file-as" refines="#title"> (used for sorting, typically "Lastname, Firstname")</meta>
+subtitle is also possible
+dc: title id="subtitle"
+dc: title id="fulltitle"
+
+dc:subject
+
+id="subject-1" etc
+properties will define things like authority, term, authority is source for category, term contains term id for subject heading
+
+also, se:subject properties exist, broadier non-library of congress metadata
+
+dc:desription
+
+dc:language (uses the ietf langauge tage https://en.wikipedia.org/wiki/IETF_language_tag)
+
+dc:source (the source of the ebook content, e.g. a URL or original publication info)
+
+author info is in the creator block
+dc:creator id="author"
+more than one author has id of author-1, author-2, etc
+
+more info exists, can be seen here
+https://standardebooks.org/manual/1.0.0/9-metadata
+
+
+
+"""
