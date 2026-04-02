@@ -5,7 +5,7 @@ from __future__ import annotations
 from functools import lru_cache
 from pathlib import Path
 
-from .types import CommonJapaneseFilter, WordFilterSelection
+from .types import CommonJapaneseFilter, HalfCandidate, WordFilterSelection
 
 _JP_FILTERS_DIR = (
     Path(__file__).resolve().parent / "word_filters" / "japanese_filters"
@@ -84,3 +84,61 @@ def compile_filter_sets_for_selection(
         common_japanese=selection["common_japanese"],
         include_newspaper_kanji=selection["include_newspaper_kanji"],
     )
+
+
+def _is_kanji_char(char: str) -> bool:
+    code = ord(char)
+    return (
+        0x3400 <= code <= 0x4DBF
+        or 0x4E00 <= code <= 0x9FFF
+        or 0xF900 <= code <= 0xFAFF
+    )
+
+
+def passes_kanji_filter(base: str, filtered_kanji: frozenset[str]) -> bool:
+    """
+    Keep candidate only when at least one kanji is outside the filtered set.
+
+    If all kanji in the token are in the filtered set, the token is excluded.
+    """
+
+    kanji_chars = [char for char in base if _is_kanji_char(char)]
+    if not kanji_chars:
+        return True
+    return not all(char in filtered_kanji for char in kanji_chars)
+
+
+def should_keep_default_candidate(
+    base: str,
+    bucket: HalfCandidate,
+) -> bool:
+    _ = (base, bucket)
+    return True
+
+
+def build_candidate_filter(
+    source_language: str,
+    word_filter: frozenset[str],
+    kanji_filter: frozenset[str] | None,
+):
+    """Build a language-specific candidate predicate once per filter stage."""
+
+    if source_language == "ja":
+
+        def keep_japanese_candidate(base: str, bucket: HalfCandidate) -> bool:
+            _ = bucket
+            if base in word_filter:
+                return False
+            if kanji_filter is None:
+                return True
+            return passes_kanji_filter(base, kanji_filter)
+
+        return keep_japanese_candidate
+
+    # English-specific filtering strategy will be added in the next phase.
+    def keep_default_candidate(base: str, bucket: HalfCandidate) -> bool:
+        if base in word_filter:
+            return False
+        return should_keep_default_candidate(base, bucket)
+
+    return keep_default_candidate

@@ -9,7 +9,7 @@ import spacy
 from spacy.language import Language as SpacyLanguage
 from spacy.tokens import Doc, Token
 
-from .types import HalfCandidate
+from .types import Candidate, HalfCandidate
 
 _MODEL_BY_LANGUAGE: dict[str, str] = {
     "ja": "ja_core_news_sm",
@@ -81,6 +81,64 @@ def _update_bucket_from_doc(
         bucket["total_count"] += 1
         bucket["surface_forms"].add(surface)
         bucket["pos_counts"][pos] = bucket["pos_counts"].get(pos, 0) + 1
+
+
+def merge_half_candidates(
+    accumulator: dict[str, HalfCandidate],
+    chapter_candidates: list[HalfCandidate],
+) -> tuple[int, int]:
+    """Merge one chapter candidate list into a global base-keyed map."""
+
+    chapter_word_count = 0
+    for chapter_candidate in chapter_candidates:
+        base = chapter_candidate["base"]
+        chapter_word_count += chapter_candidate["total_count"]
+
+        existing = accumulator.get(base)
+        if existing is None:
+            accumulator[base] = {
+                "base": base,
+                "total_count": chapter_candidate["total_count"],
+                "surface_forms": set(chapter_candidate["surface_forms"]),
+                "pos_counts": dict(chapter_candidate["pos_counts"]),
+            }
+            continue
+
+        existing["total_count"] += chapter_candidate["total_count"]
+        existing["surface_forms"].update(chapter_candidate["surface_forms"])
+        for pos, count in chapter_candidate["pos_counts"].items():
+            existing["pos_counts"][pos] = (
+                existing["pos_counts"].get(pos, 0) + count
+            )
+
+    return chapter_word_count, len(chapter_candidates)
+
+
+def project_candidate(bucket: HalfCandidate) -> Candidate:
+    """Project a HalfCandidate bucket to a stable Candidate payload."""
+
+    base = bucket["base"]
+    surface_forms = bucket["surface_forms"]
+    pos_counts = bucket["pos_counts"]
+
+    if base in surface_forms:
+        surface = base
+    elif surface_forms:
+        surface = min(surface_forms)
+    else:
+        surface = base
+
+    if pos_counts:
+        pos = max(pos_counts.items(), key=lambda item: (item[1], item[0]))[0]
+    else:
+        pos = "X"
+
+    return {
+        "surface": surface,
+        "base": base,
+        "pos": pos,
+        "count": bucket["total_count"],
+    }
 
 
 def aggregate_docs_to_half_candidates(
