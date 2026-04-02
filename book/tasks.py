@@ -21,6 +21,7 @@ from .nlp.tokenize import (
     tokenize_to_half_candidates,
 )
 from .nlp.types import Candidate, HalfCandidate, WordFilterSelection
+from .translation import translate_base_words
 
 
 class JobCancelledError(Exception):
@@ -201,17 +202,32 @@ def _stage_translate(
     filtered: dict[str, Any],
 ) -> dict[str, Any]:
     _set_stage(job, "translating", 80)
-    # Placeholder until translation integration is implemented.
+
+    candidates: list[Candidate] = filtered["candidates"]
+    base_words = [candidate["base"] for candidate in candidates]
+
+    try:
+        translation_map = translate_base_words(
+            base_words=base_words,
+            source_language=job.source_language,
+            target_language=job.target_language,
+        )
+    except Exception:
+        # Keep pipeline resilient while translation integration matures.
+        translation_map = {}
+
     preview_candidates = [
         {
             "surface": candidate["surface"],
             "base": candidate["base"],
             "count": candidate["count"],
+            "translated": translation_map.get(candidate["base"], ""),
         }
-        for candidate in filtered["candidates"][:20]
+        for candidate in candidates[:20]
     ]
     return {
         "preview_candidates": preview_candidates,
+        "translation_map": translation_map,
     }
 
 
@@ -225,6 +241,7 @@ def _stage_finalize(
     job.result_payload = {
         "candidates": filtered["candidates"],
         "previewCandidates": translated["preview_candidates"],
+        "translations": translated.get("translation_map", {}),
         "chapterStats": filtered["chapter_stats"],
         "note": "Preview generation stages are scaffolded for phase 3/4.",
     }
