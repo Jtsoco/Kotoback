@@ -444,10 +444,14 @@ class IngestionJobApiTests(APITestCase):
             progress=60,
         )
 
-        url = reverse("book:ingestion-job-result", kwargs={"job_id": job.id})
+        url = reverse(
+            "book:ingestion-job-result", kwargs={"job_id": job.id}
+        )
         response = self.client.get(url)
         self.assertEqual(response.status_code, 409)
-        self.assertEqual(response.data["status"], IngestionJobStatus.PROCESSING)
+        self.assertEqual(
+            response.data["status"], IngestionJobStatus.PROCESSING
+        )
 
     def test_cancel_marks_cancellable_job_cancelled(self):
         job = IngestionJob.objects.create(
@@ -468,3 +472,245 @@ class IngestionJobApiTests(APITestCase):
         self.assertEqual(response.status_code, 200)
         job.refresh_from_db()
         self.assertEqual(job.status, IngestionJobStatus.CANCELLED)
+
+
+class IngestionTaskStageTests(APITestCase):
+    """Test ingestion task orchestration and stage functions."""
+
+    def setUp(self):
+        from .tasks import process_ingestion_job
+
+        self.process_task = process_ingestion_job
+        User = get_user_model()
+        self.user = User.objects.create_user(
+            username="task-test-user",
+            email="task@example.com",
+            password="pass12345",
+        )
+
+    def test_process_ingestion_job_skips_if_already_cancelled(self):
+        """Verify job processing returns early if already cancelled."""
+        job = IngestionJob.objects.create(
+            user=self.user,
+            source_file=SimpleUploadedFile(
+                "book.epub",
+                b"PK\x03\x04",
+                content_type="application/epub+zip",
+            ),
+            source_language="en",
+            target_language="ja",
+            status=IngestionJobStatus.CANCELLED,
+        )
+
+        # Should return without error or state change
+        self.process_task(job.id)
+
+        job.refresh_from_db()
+        self.assertEqual(job.status, IngestionJobStatus.CANCELLED)
+
+    def test_stage_extract_text_missing_file_raises_error(self):
+        """Verify extraction stage handles missing EPUB file."""
+        from .tasks import _stage_extract_text
+
+        job = IngestionJob.objects.create(
+            user=self.user,
+            source_file=SimpleUploadedFile(
+                "nonexistent.epub",
+                b"",
+                content_type="application/epub+zip",
+            ),
+            source_language="en",
+            target_language="ja",
+            status=IngestionJobStatus.PROCESSING,
+        )
+        # Delete the file but keep the reference
+        import os
+        if os.path.exists(job.source_file.path):
+            os.remove(job.source_file.path)
+
+        with self.assertRaises(FileNotFoundError):
+            _stage_extract_text(job)
+
+    def test_stage_extract_text_returns_required_keys(self):
+        """Verify extraction stage returns expected payload shape."""
+        from .tasks import _stage_extract_text
+        from zipfile import ZipFile
+        import io
+
+        # Create minimal valid EPUB structure in memory
+        epub_bytes = io.BytesIO()
+        with ZipFile(epub_bytes, "w") as zf:
+            container_xml = (
+                b"<?xml version=\"1.0\"?>\n"
+                b'<container version="1.0" xmlns='
+                b'"urn:oasis:names:tc:opendocument:xmlns:container">\n'
+                b"  <rootfiles>\n"
+                b'    <rootfile full-path="content.opf"/>\n'
+                b"  </rootfiles>\n"
+                b"</container>"
+            )
+            zf.writestr("META-INF/container.xml", container_xml)
+
+            content_opf = (
+                b"<?xml version=\"1.0\"?>\n"
+                b'<package xmlns="http://www.idpf.org/2007/opf">\n'
+                b"  <manifest>\n"
+                b'    <item id="c1" href="ch1.xhtml"/>\n'
+                b"  </manifest>\n"
+                b"  <spine>\n"
+                b'    <itemref idref="c1"/>\n'
+                b"  </spine>\n"
+                b"</package>"
+            )
+            zf.writestr("content.opf", content_opf)
+            zf.writestr("ch1.xhtml", b"<html><body>Text</body></html>")
+
+        job = IngestionJob.objects.create(
+            user=self.user,
+            source_file=SimpleUploadedFile(
+                "test.epub",
+                epub_bytes.getvalue(),
+                content_type="application/epub+zip",
+            ),
+            source_language="en",
+            target_language="ja",
+            status=IngestionJobStatus.PROCESSING,
+        )
+
+        result = _stage_extract_text(job)
+
+        self.assertIn("epub_path", result)
+        self.assertIn("spine_paths", result)
+        self.assertIn("chapter_count", result)
+        self.assertIn("source_language", result)
+        self.assertEqual(result["source_language"], "en")
+        self.assertGreater(result["chapter_count"], 0)
+
+    def test_filter_candidates_respects_card_count_target(self):
+        """Verify filter stage truncates to card_count_target."""
+        job = IngestionJob.objects.create(
+            user=self.user,
+            source_file=SimpleUploadedFile(
+                "test.epub",
+                b"PK\x03\x04",
+                content_type="application/epub+zip",
+            ),
+            source_language="en",
+            target_language="ja",
+            card_count_target=5,
+            status=IngestionJobStatus.PROCESSING,
+        )
+
+        # Create many candidates
+        global_buckets = {}
+        for i in range(50):
+            global_buckets[f"word{i}"] = {
+                "base": f"word{i}",
+                "total_count": 100 - i,
+                "surface_forms": {f"word{i}"},
+                "pos_counts": {"NOUN": 100 - i},
+            }
+
+        ranked = {
+            "global_buckets": global_buckets,
+            "word_count": 2500,
+            "unique_words": 50,
+            "chapter_stats": [],
+        }
+
+        from .tasks import _stage_filter_candidates
+
+        result = _stage_filter_candidates(job, ranked)
+
+        self.assertLessEqual(len(result["candidates"]), 5)
+
+    def test_stage_finalize_updates_job_to_succeeded(self):
+        """Verify finalize stage marks job as succeeded with payloads."""
+        from .tasks import _stage_finalize
+
+        job = IngestionJob.objects.create(
+            user=self.user,
+            source_file=SimpleUploadedFile(
+                "test.epub",
+                b"PK\x03\x04",
+                content_type="application/epub+zip",
+            ),
+            source_language="en",
+            target_language="ja",
+            status=IngestionJobStatus.PROCESSING,
+            current_stage="finalizing",
+        )
+
+        filtered = {
+            "candidates": [
+                {
+                    "surface": "word1",
+                    "base": "word1",
+                    "pos": "NOUN",
+                    "count": 100,
+                },
+            ],
+            "word_count": 5000,
+            "unique_words": 500,
+            "filtered_word_count": 4000,
+            "filtered_unique_words": 400,
+            "filtered_out_count": 100,
+            "chapter_stats": [
+                {
+                    "chapterIndex": 1,
+                    "chapterPath": "ch1.xhtml",
+                    "wordCount": 5000,
+                    "uniqueWords": 500,
+                }
+            ],
+        }
+
+        translated = {"preview_candidates": []}
+
+        _stage_finalize(job, filtered, translated)
+
+        job.refresh_from_db()
+        self.assertEqual(job.status, IngestionJobStatus.SUCCEEDED)
+        self.assertEqual(job.progress, 100)
+        self.assertEqual(job.current_stage, "completed")
+        self.assertIsNotNone(job.completed_at)
+        self.assertIn("candidates", job.result_payload)
+        self.assertIn("wordCount", job.summary)
+
+    def test_stage_finalize_populates_summary_correctly(self):
+        """Verify finalize stage creates comprehensive summary."""
+        from .tasks import _stage_finalize
+
+        job = IngestionJob.objects.create(
+            user=self.user,
+            source_file=SimpleUploadedFile(
+                "test.epub",
+                b"PK\x03\x04",
+                content_type="application/epub+zip",
+            ),
+            source_language="en",
+            target_language="ja",
+            status=IngestionJobStatus.PROCESSING,
+        )
+
+        filtered = {
+            "candidates": [],
+            "word_count": 1000,
+            "unique_words": 200,
+            "filtered_word_count": 850,
+            "filtered_unique_words": 170,
+            "filtered_out_count": 30,
+            "chapter_stats": [],
+        }
+
+        translated = {"preview_candidates": []}
+
+        _stage_finalize(job, filtered, translated)
+
+        job.refresh_from_db()
+        self.assertEqual(job.summary["wordCount"], 1000)
+        self.assertEqual(job.summary["uniqueWords"], 200)
+        self.assertEqual(job.summary["filteredWordCount"], 850)
+        self.assertEqual(job.summary["filteredUniqueWords"], 170)
+        self.assertEqual(job.summary["filteredOutCount"], 30)
+        self.assertEqual(job.summary["candidateCount"], 0)
