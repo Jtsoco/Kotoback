@@ -129,11 +129,6 @@ def _mark_failed(job: IngestionJob, exc: Exception) -> None:
     )
 
 
-@shared_task
-def add(x, y):
-    """Simple test task — returns x + y."""
-    return x + y
-
 
 @shared_task(bind=True)
 def process_ingestion_job(self, job_id: int):
