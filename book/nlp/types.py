@@ -46,6 +46,14 @@ class WordFilterSelectionRequest(TypedDict, total=False):
     include_newspaper_kanji: bool
 
 
+class EpubMetadata(TypedDict, total=False):
+    """Extracted EPUB package metadata from OPF rootfile."""
+
+    title: str
+    authors: list[str]
+    identifier: str
+
+
 def normalize_filter_selection(
     request_data: WordFilterSelectionRequest,
 ) -> WordFilterSelection:

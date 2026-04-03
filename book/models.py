@@ -40,6 +40,11 @@ class BookCard(models.Model):
         related_name="bookcards",
     )
 
+    # EPUB metadata fields (temporary until Book integration)
+    title = models.CharField(max_length=512, blank=True)
+    author = models.JSONField(default=list, blank=True)  # List of author names
+    epub_id = models.CharField(max_length=256, blank=True)
+
     # When the user last studied this bookcard (for homepage ordering).
     last_studied_at = models.DateTimeField(null=True, blank=True)
 
@@ -50,8 +55,7 @@ class BookCard(models.Model):
         constraints = []
 
     def __str__(self) -> str:
-        book_id = self.book_id if self.book_id else "unlinked"
-        return f"{self.user_id}:{book_id}"
+        return self.title or f"BookCard({self.user_id})"
 
 
 class DefaultFlashCard(models.Model):

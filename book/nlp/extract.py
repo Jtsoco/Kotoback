@@ -9,6 +9,8 @@ from zipfile import ZipFile
 from bs4 import BeautifulSoup
 from lxml import etree
 
+from .types import EpubMetadata
+
 
 def _read_archive_xml(zf: ZipFile, archive_path: str) -> etree._Element:
     """Read and parse one XML file from the EPUB archive."""
@@ -39,8 +41,8 @@ def _get_rootfile_path_from_zip(zf: ZipFile) -> str:
 
     return full_path
 
-def _extract_epub_metadata_from_zip(zf: ZipFile, rootfile_path: str) -> dict[str, str | None]:
-    """ Extract metadata fielsd from the OPF rootfile like author, title, etc. """
+def _extract_epub_metadata_from_zip(zf: ZipFile, rootfile_path: str) -> dict[str, str | list[str]]:
+    """Extract specific metadata fields (title, authors, identifier) from the OPF rootfile."""
 
     package_root = _read_archive_xml(zf, rootfile_path)
 
@@ -53,13 +55,34 @@ def _extract_epub_metadata_from_zip(zf: ZipFile, rootfile_path: str) -> dict[str
             "No <metadata> section found in the OPF rootfile."
         )
 
-    metadata: dict[str, str | None] = {}
-    for child in metadata_node[0].iterchildren():
-        tag_name = etree.QName(child).localname
-        text_content = child.text.strip() if child.text else None
-        metadata[tag_name] = text_content
+    # Extract title
+    title_nodes = metadata_node[0].xpath(
+        "*[local-name()='title']"
+    )
+    title = title_nodes[0].text.strip() if title_nodes and title_nodes[0].text else ""
 
-    return metadata
+    # Extract authors (all creators)
+    creator_nodes = metadata_node[0].xpath(
+        "*[local-name()='creator']"
+    )
+    authors = [
+        creator.text.strip()
+        for creator in creator_nodes
+        if creator.text
+    ]
+
+    # Extract identifier (first one, typically the unique ID)
+    identifier_nodes = metadata_node[0].xpath(
+        "*[local-name()='identifier']"
+    )
+    identifier = identifier_nodes[0].text.strip() if identifier_nodes and identifier_nodes[0].text else ""
+
+    return {
+        "title": title,
+        "authors": authors,
+        "identifier": identifier,
+    }
+
 
 def _get_spine_content_paths_from_zip(
     zf: ZipFile,
@@ -145,6 +168,25 @@ def get_spine_content_paths(
 
     with ZipFile(epub_path) as zf:
         return _get_spine_content_paths_from_zip(zf, rootfile_path)
+
+
+def extract_epub_metadata(
+    epub_path: str | Path,
+    rootfile_path: str,
+) -> EpubMetadata:
+    """
+    Extract title, authors, and identifier from an EPUB's OPF metadata.
+
+    Args:
+        epub_path: Path to the `.epub` file on disk.
+        rootfile_path: OPF path returned from `get_rootfile_path_from_epub()`.
+
+    Returns:
+        EpubMetadata dict with keys: title, authors (list), identifier.
+    """
+
+    with ZipFile(epub_path) as zf:
+        return _extract_epub_metadata_from_zip(zf, rootfile_path)
 
 
 def extract_chapter_text(
