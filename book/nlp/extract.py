@@ -39,6 +39,27 @@ def _get_rootfile_path_from_zip(zf: ZipFile) -> str:
 
     return full_path
 
+def _extract_epub_metadata_from_zip(zf: ZipFile, rootfile_path: str) -> dict[str, str | None]:
+    """ Extract metadata fielsd from the OPF rootfile like author, title, etc. """
+
+    package_root = _read_archive_xml(zf, rootfile_path)
+
+    metadata_node = package_root.xpath(
+        "/*[local-name()='package']"
+        "/*[local-name()='metadata']"
+    )
+    if not metadata_node:
+        raise ValueError(
+            "No <metadata> section found in the OPF rootfile."
+        )
+
+    metadata: dict[str, str | None] = {}
+    for child in metadata_node[0].iterchildren():
+        tag_name = etree.QName(child).localname
+        text_content = child.text.strip() if child.text else None
+        metadata[tag_name] = text_content
+
+    return metadata
 
 def _get_spine_content_paths_from_zip(
     zf: ZipFile,

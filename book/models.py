@@ -11,8 +11,9 @@ class Language(models.TextChoices):
 
 
 class Book(models.Model):
-    title = models.CharField(max_length=512)
-    info = models.TextField(blank=True)
+    identifier = models.CharField(max_length=256, unique=True, db_index=True)
+    title = models.CharField(max_length=512, db_index=True)
+    metadata = models.JSONField(default=dict, blank=True)
 
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
@@ -31,7 +32,13 @@ class BookCard(models.Model):
         on_delete=models.CASCADE,
         related_name="bookcards",
     )
-    book = models.ForeignKey(Book, on_delete=models.CASCADE, related_name="bookcards")
+    book = models.ForeignKey(
+        Book,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="bookcards",
+    )
 
     # When the user last studied this bookcard (for homepage ordering).
     last_studied_at = models.DateTimeField(null=True, blank=True)
@@ -40,12 +47,11 @@ class BookCard(models.Model):
     updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
-        constraints = [
-            models.UniqueConstraint(fields=["user", "book"], name="uniq_bookcard_user_book"),
-        ]
+        constraints = []
 
     def __str__(self) -> str:
-        return f"{self.user_id}:{self.book_id}"
+        book_id = self.book_id if self.book_id else "unlinked"
+        return f"{self.user_id}:{book_id}"
 
 
 class DefaultFlashCard(models.Model):
