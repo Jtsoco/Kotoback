@@ -6,7 +6,7 @@ from django.utils import timezone
 from rest_framework.authtoken.models import Token
 from rest_framework.test import APITestCase
 
-from .models import Book, BookCard, FlashCard
+from book.models import Book, BookCard, FlashCard
 
 
 def study_payload(word: str) -> dict:

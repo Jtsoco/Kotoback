@@ -4,7 +4,7 @@ from django.contrib.auth import get_user_model
 from django.core.files.uploadedfile import SimpleUploadedFile
 from rest_framework.test import APITestCase
 
-from .models import IngestionJob, IngestionJobStatus
+from book.models import IngestionJob, IngestionJobStatus
 
 
 class IngestionTaskTranslationTests(APITestCase):
@@ -21,7 +21,7 @@ class IngestionTaskTranslationTests(APITestCase):
     @patch("book.tasks.translate_base_words")
     def test_stage_translate_uses_translation_map(self, mock_translate):
         """Verify translation stage maps bases to translated words."""
-        from .tasks import _stage_translate
+        from book.tasks import _stage_translate
 
         mock_translate.return_value = {
             "book": "本",
@@ -74,7 +74,7 @@ class IngestionTaskTranslationTests(APITestCase):
         mock_translate,
     ):
         """Verify translation stage gracefully handles translation failures."""
-        from .tasks import _stage_translate
+        from book.tasks import _stage_translate
 
         mock_translate.side_effect = RuntimeError("deepl unavailable")
 

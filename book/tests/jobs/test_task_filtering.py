@@ -2,7 +2,7 @@ from django.contrib.auth import get_user_model
 from django.core.files.uploadedfile import SimpleUploadedFile
 from rest_framework.test import APITestCase
 
-from .models import IngestionJob, IngestionJobStatus
+from book.models import IngestionJob, IngestionJobStatus
 
 
 class IngestionTaskFilteringTests(APITestCase):
@@ -18,7 +18,7 @@ class IngestionTaskFilteringTests(APITestCase):
 
     def test_filter_candidates_respects_card_count_target(self):
         """Verify filter stage truncates to card_count_target."""
-        from .tasks import _stage_filter_candidates
+        from book.tasks import _stage_filter_candidates
 
         job = IngestionJob.objects.create(
             user=self.user,

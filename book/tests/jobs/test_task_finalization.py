@@ -4,7 +4,7 @@ from django.contrib.auth import get_user_model
 from django.core.files.uploadedfile import SimpleUploadedFile
 from rest_framework.test import APITestCase
 
-from .models import BookCard, FlashCard, IngestionJob, IngestionJobStatus
+from book.models import BookCard, FlashCard, IngestionJob, IngestionJobStatus
 
 
 class IngestionTaskFinalizationTests(APITestCase):
@@ -20,7 +20,7 @@ class IngestionTaskFinalizationTests(APITestCase):
 
     def test_stage_finalize_updates_job_to_succeeded(self):
         """Verify finalize stage marks job as succeeded with payloads."""
-        from .tasks import _stage_finalize
+        from book.tasks import _stage_finalize
 
         job = IngestionJob.objects.create(
             user=self.user,
@@ -73,7 +73,7 @@ class IngestionTaskFinalizationTests(APITestCase):
 
     def test_stage_finalize_populates_summary_correctly(self):
         """Verify finalize stage creates comprehensive summary."""
-        from .tasks import _stage_finalize
+        from book.tasks import _stage_finalize
 
         job = IngestionJob.objects.create(
             user=self.user,
@@ -111,7 +111,7 @@ class IngestionTaskFinalizationTests(APITestCase):
     @patch("book.tasks.transaction")
     def test_finalize_creates_multiple_flashcards(self, mock_transaction):
         """Verify finalize creates all flashcards in bulk."""
-        from .tasks import _stage_finalize
+        from book.tasks import _stage_finalize
 
         # Mock transaction context manager for simpler testing
         ctx = mock_transaction.atomic.return_value
@@ -184,7 +184,7 @@ class IngestionTaskFinalizationTests(APITestCase):
         self, mock_bulk_create
     ):
         """Verify bookcard not created twice if flashcards fail."""
-        from .tasks import _stage_finalize
+        from book.tasks import _stage_finalize
 
         # First create a bookcard
         bookcard = BookCard.objects.create(

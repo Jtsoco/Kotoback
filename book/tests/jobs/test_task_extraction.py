@@ -6,7 +6,7 @@ from django.contrib.auth import get_user_model
 from django.core.files.uploadedfile import SimpleUploadedFile
 from rest_framework.test import APITestCase
 
-from .models import IngestionJob, IngestionJobStatus
+from book.models import IngestionJob, IngestionJobStatus
 
 
 class IngestionTaskExtractionTests(APITestCase):
@@ -22,7 +22,7 @@ class IngestionTaskExtractionTests(APITestCase):
 
     def test_stage_extract_spine_missing_file_raises_error(self):
         """Verify extraction stage handles missing EPUB file."""
-        from .tasks import _stage_extract_spine
+        from book.tasks import _stage_extract_spine
 
         job = IngestionJob.objects.create(
             user=self.user,
@@ -44,7 +44,7 @@ class IngestionTaskExtractionTests(APITestCase):
 
     def test_stage_extract_spine_returns_required_keys(self):
         """Verify extraction stage returns expected payload shape."""
-        from .tasks import _stage_extract_spine
+        from book.tasks import _stage_extract_spine
 
         # Create minimal valid EPUB structure in memory
         epub_bytes = io.BytesIO()

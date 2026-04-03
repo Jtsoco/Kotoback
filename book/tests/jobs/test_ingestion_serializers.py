@@ -2,8 +2,8 @@ from django.contrib.auth import get_user_model
 from django.core.files.uploadedfile import SimpleUploadedFile
 from rest_framework.test import APITestCase
 
-from .models import IngestionJob, IngestionJobStatus
-from .serializers import (
+from book.models import IngestionJob, IngestionJobStatus
+from book.serializers import (
     IngestionJobResultSerializer,
     IngestionJobStatusSerializer,
     IngestionJobUploadSerializer,

@@ -3,7 +3,7 @@ from django.test import override_settings
 from rest_framework import serializers
 from rest_framework.test import APITestCase
 
-from .upload_validators import validate_epub_upload
+from book.upload_validators import validate_epub_upload
 
 
 class EpubUploadValidatorTests(APITestCase):
