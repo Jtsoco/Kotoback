@@ -134,7 +134,7 @@ def _extract_chapter_text_from_zip(
     """Return bulk visible text for one chapter XHTML file in the EPUB."""
 
     chapter_bytes = zf.read(chapter_path)
-    soup = BeautifulSoup(chapter_bytes, "lxml")
+    soup = BeautifulSoup(chapter_bytes, "xml")
 
     for tag in soup(["script", "style", "head"]):
         tag.decompose()
