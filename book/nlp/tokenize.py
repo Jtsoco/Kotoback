@@ -46,9 +46,9 @@ def _normalize_base_form(token: Token) -> str:
 
 
 def _should_skip_token(token: Token) -> bool:
-    """Exclude whitespace and punctuation from candidate aggregation."""
+    """Exclude whitespace, punctuation, and stopwords from candidate aggregation."""
 
-    return token.is_space or token.is_punct
+    return token.is_space or token.is_punct or token.is_stop
 
 
 def _update_bucket_from_doc(

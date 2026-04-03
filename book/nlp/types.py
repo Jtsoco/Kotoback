@@ -5,7 +5,8 @@ from __future__ import annotations
 from typing import Literal, TypedDict
 
 
-CommonJapaneseFilter = Literal["ja_common_6000", "ja_common_10000"]
+CommonFilterClass = Literal["common_english", "common_japanese"]
+CommonWordsLevel = Literal["2k", "4k", "6k", "8k", "10k"]
 
 
 class Candidate(TypedDict):
@@ -26,23 +27,25 @@ class HalfCandidate(TypedDict):
     pos_counts: dict[str, int]
 
 
-class WordFilterSelection(TypedDict):
+class WordFilterSelection(TypedDict, total=False):
     """
-    Internal normalized filter selection.
+    Internal normalized filter selection across languages.
 
-    `common_japanese` is mutually exclusive (6000 or 10000),
-    while `include_newspaper_kanji` can be toggled independently.
+    `filter_class` specifies the language (English or Japanese).
+    `common_words` specifies the frequency tier (2k, 4k, 6k, 8k, 10k).
+    `include_newspaper_kanji` is only meaningful for Japanese.
     """
 
-    common_japanese: CommonJapaneseFilter | None
+    filter_class: CommonFilterClass
+    common_words: CommonWordsLevel
     include_newspaper_kanji: bool
 
 
 class WordFilterSelectionRequest(TypedDict, total=False):
     """Raw HTTP request shape before normalization/validation."""
 
-    use_common_6000: bool
-    use_common_10000: bool
+    filter_class: CommonFilterClass
+    common_words: CommonWordsLevel
     include_newspaper_kanji: bool
 
 
@@ -57,29 +60,27 @@ class EpubMetadata(TypedDict, total=False):
 def normalize_filter_selection(
     request_data: WordFilterSelectionRequest,
 ) -> WordFilterSelection:
-    """Validate request toggles and map to the internal selection shape."""
+    """Validate request data and map to the internal selection shape."""
 
-    use_6000 = bool(request_data.get("use_common_6000", False))
-    use_10000 = bool(request_data.get("use_common_10000", False))
+    filter_class = request_data.get("filter_class")
+    common_words = request_data.get("common_words")
     include_newspaper_kanji = bool(
         request_data.get("include_newspaper_kanji", False)
     )
 
-    if use_6000 and use_10000:
-        raise ValueError(
-            "Only one of use_common_6000 or use_common_10000 can be selected."
-        )
+    if not filter_class:
+        raise ValueError("filter_class is required.")
+    if not common_words:
+        raise ValueError("common_words is required.")
 
-    common_japanese: CommonJapaneseFilter | None = None
-    if use_6000:
-        common_japanese = "ja_common_6000"
-    elif use_10000:
-        common_japanese = "ja_common_10000"
-
-    return {
-        "common_japanese": common_japanese,
-        "include_newspaper_kanji": include_newspaper_kanji,
+    selection: WordFilterSelection = {
+        "filter_class": filter_class,
+        "common_words": common_words,
     }
+    if include_newspaper_kanji:
+        selection["include_newspaper_kanji"] = include_newspaper_kanji
+
+    return selection
 
 """
 Ebook metadata tags are:

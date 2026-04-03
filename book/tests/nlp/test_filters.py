@@ -6,9 +6,13 @@ from book.nlp.filters import (
     compile_filter_sets_for_selection,
     load_ja_common_6000_filter,
     load_ja_common_10000_filter,
+    load_en_common_2k_filter,
+    load_en_common_4k_filter,
+    load_en_common_6k_filter,
+    load_en_common_8k_filter,
+    load_en_common_10k_filter,
     load_newspaper_kanji_filter,
     passes_kanji_filter,
-    should_keep_default_candidate,
 )
 
 
@@ -16,12 +20,18 @@ class FilterLayerTests(SimpleTestCase):
     def setUp(self):
         load_ja_common_6000_filter.cache_clear()
         load_ja_common_10000_filter.cache_clear()
+        load_en_common_2k_filter.cache_clear()
+        load_en_common_4k_filter.cache_clear()
+        load_en_common_6k_filter.cache_clear()
+        load_en_common_8k_filter.cache_clear()
+        load_en_common_10k_filter.cache_clear()
         load_newspaper_kanji_filter.cache_clear()
         compile_filter_sets.cache_clear()
 
     def test_compile_6000_without_kanji_returns_expected_sets(self):
         word_filter, kanji_filter = compile_filter_sets(
-            common_japanese="ja_common_6000",
+            filter_class="common_japanese",
+            common_words="6k",
             include_newspaper_kanji=False,
         )
 
@@ -32,7 +42,8 @@ class FilterLayerTests(SimpleTestCase):
 
     def test_compile_10000_with_kanji_returns_expected_sets(self):
         word_filter, kanji_filter = compile_filter_sets(
-            common_japanese="ja_common_10000",
+            filter_class="common_japanese",
+            common_words="10k",
             include_newspaper_kanji=True,
         )
 
@@ -47,7 +58,8 @@ class FilterLayerTests(SimpleTestCase):
 
     def test_compile_none_without_kanji_returns_empty_word_filter(self):
         word_filter, kanji_filter = compile_filter_sets(
-            common_japanese=None,
+            filter_class=None,
+            common_words=None,
             include_newspaper_kanji=False,
         )
 
@@ -57,7 +69,8 @@ class FilterLayerTests(SimpleTestCase):
     def test_compile_for_selection_adapter(self):
         word_filter, kanji_filter = compile_filter_sets_for_selection(
             {
-                "common_japanese": "ja_common_6000",
+                "filter_class": "common_japanese",
+                "common_words": "6k",
                 "include_newspaper_kanji": True,
             }
         )
@@ -67,15 +80,50 @@ class FilterLayerTests(SimpleTestCase):
 
     def test_compile_filter_sets_reuses_cached_result_for_same_selection(self):
         first = compile_filter_sets(
-            common_japanese="ja_common_10000",
+            filter_class="common_japanese",
+            common_words="10k",
             include_newspaper_kanji=True,
         )
         second = compile_filter_sets(
-            common_japanese="ja_common_10000",
+            filter_class="common_japanese",
+            common_words="10k",
             include_newspaper_kanji=True,
         )
 
         self.assertIs(first, second)
+
+    def test_compile_english_2k_returns_word_filter(self):
+        word_filter, kanji_filter = compile_filter_sets(
+            filter_class="common_english",
+            common_words="2k",
+            include_newspaper_kanji=False,
+        )
+
+        self.assertIsInstance(word_filter, frozenset)
+        self.assertGreater(len(word_filter), 0)
+        self.assertIsNone(kanji_filter)
+
+    def test_compile_english_6k_returns_word_filter(self):
+        word_filter, kanji_filter = compile_filter_sets(
+            filter_class="common_english",
+            common_words="6k",
+            include_newspaper_kanji=False,
+        )
+
+        self.assertIsInstance(word_filter, frozenset)
+        self.assertGreater(len(word_filter), 0)
+        self.assertIsNone(kanji_filter)
+
+    def test_compile_english_10k_returns_word_filter(self):
+        word_filter, kanji_filter = compile_filter_sets(
+            filter_class="common_english",
+            common_words="10k",
+            include_newspaper_kanji=False,
+        )
+
+        self.assertIsInstance(word_filter, frozenset)
+        self.assertGreater(len(word_filter), 0)
+        self.assertIsNone(kanji_filter)
 
 
 class KanjiFilterTests(SimpleTestCase):
@@ -180,11 +228,108 @@ class CandidateFilterStrategyTests(SimpleTestCase):
         # Non-filtered word should pass
         self.assertTrue(keep_candidate("hello", bucket))
 
-    def test_should_keep_default_candidate_always_true(self):
+
+class EnglishFilterTests(SimpleTestCase):
+    """Test English-specific filtering behavior."""
+
+    def setUp(self):
+        load_en_common_2k_filter.cache_clear()
+        load_en_common_4k_filter.cache_clear()
+        load_en_common_6k_filter.cache_clear()
+        load_en_common_8k_filter.cache_clear()
+        load_en_common_10k_filter.cache_clear()
+        compile_filter_sets.cache_clear()
+
+    def test_english_2k_filters_very_common_words(self):
+        """Very common words like 'the', 'a', 'is' should be in 2k filter."""
+        word_filter, _ = compile_filter_sets(
+            filter_class="common_english",
+            common_words="2k",
+            include_newspaper_kanji=False,
+        )
+
+        # These are among the most common English words
+        common_words = ["the", "a", "is", "and", "to", "of", "in", "that", "it"]
+        for word in common_words:
+            self.assertIn(
+                word,
+                word_filter,
+                f"'{word}' should be in 2k common English words",
+            )
+
+    def test_english_filter_excludes_uncommon_words(self):
+        """Uncommon/technical words should not be in common filters."""
+        word_filter, _ = compile_filter_sets(
+            filter_class="common_english",
+            common_words="2k",
+            include_newspaper_kanji=False,
+        )
+
+        # These are uncommon/technical words
+        uncommon_words = [
+            "philological",
+            "ubiquitous",
+            "colloquialism",
+            "sesquipedalian",
+        ]
+        for word in uncommon_words:
+            self.assertNotIn(
+                word,
+                word_filter,
+                f"'{word}' should not be in 2k common English words",
+            )
+
+    def test_english_6k_tier_contains_more_words_than_2k(self):
+        """6k tier should contain all 2k words plus additional intermediate words."""
+        filter_2k, _ = compile_filter_sets(
+            filter_class="common_english",
+            common_words="2k",
+            include_newspaper_kanji=False,
+        )
+        filter_6k, _ = compile_filter_sets(
+            filter_class="common_english",
+            common_words="6k",
+            include_newspaper_kanji=False,
+        )
+
+        # 6k should be larger than 2k
+        self.assertGreater(len(filter_6k), len(filter_2k))
+
+        # All 2k words should be in 6k
+        self.assertTrue(
+            filter_2k.issubset(filter_6k),
+            "All 2k words should be included in 6k tier",
+        )
+
+    def test_english_candidate_filter_with_2k_tier(self):
+        """Test that candidate filter properly uses English 2k tier."""
+        word_filter, _ = compile_filter_sets(
+            filter_class="common_english",
+            common_words="2k",
+            include_newspaper_kanji=False,
+        )
+
+        keep_candidate = build_candidate_filter(
+            "en",
+            word_filter,
+            kanji_filter=None,
+        )
+
         bucket = {
             "base": "test",
             "total_count": 1,
             "surface_forms": set(),
             "pos_counts": {},
         }
-        self.assertTrue(should_keep_default_candidate("anything", bucket))
+
+        # Very common words should be filtered out
+        self.assertFalse(
+            keep_candidate("the", bucket),
+            "'the' should be filtered by 2k common words",
+        )
+
+        # Moderately uncommon words should pass
+        self.assertTrue(
+            keep_candidate("esoteric", bucket),
+            "'esoteric' should not be filtered by 2k common words",
+        )
