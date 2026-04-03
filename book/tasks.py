@@ -3,9 +3,10 @@ from typing import Any
 from zipfile import ZipFile
 
 from celery import shared_task
+from django.db import transaction
 from django.utils import timezone
 
-from .models import IngestionJob, IngestionJobStatus
+from .models import IngestionJob, IngestionJobStatus, BookCard, FlashCard
 from .nlp.extract import (
     _extract_chapter_text_from_zip,
     _get_rootfile_path_from_zip,
@@ -80,6 +81,51 @@ def _stage_extract_spine(job: IngestionJob) -> dict[str, Any]:
         "chapter_count": len(spine_paths),
         "source_language": job.source_language,
     }
+
+
+def _candidate_to_flashcard_dict(
+    candidate: Candidate,
+    bookcard: BookCard,
+    source_language: str,
+    target_language: str,
+    translation_map: dict[str, str],
+) -> dict[str, Any]:
+    """Convert a candidate into a FlashCard dict ready for bulk_create."""
+    base_word = candidate["base"]
+    translated = translation_map.get(base_word, base_word)
+
+    return {
+        "bookcard": bookcard,
+        "front_language": source_language,
+        "back_language": target_language,
+        "front_data": {
+            "studyWord": base_word,
+            "pos": candidate.get("pos", "X"),
+            "frequency": candidate.get("count", 0),
+        },
+        "back_data": {"studyWord": translated},
+    }
+
+
+def _save_bookcard_with_idempotency_check(
+    job: IngestionJob,
+    title: str,
+    author: list[str],
+    epub_id: str,
+) -> BookCard:
+    """Create or retrieve bookcard; idempotent on retry."""
+    # Guard: if job already has bookcard, return it (idempotent)
+    if job.bookcard_id is not None:
+        return job.bookcard
+
+    # Create new BookCard
+    bookcard = BookCard.objects.create(
+        user=job.user,
+        title=title,
+        author=author,
+        epub_id=epub_id,
+    )
+    return bookcard
 
 
 def _get_filter_selection(job: IngestionJob) -> WordFilterSelection:
@@ -238,36 +284,93 @@ def _stage_finalize(
 ) -> None:
     _set_stage(job, "finalizing", 95)
 
-    job.result_payload = {
-        "candidates": filtered["candidates"],
-        "previewCandidates": translated["preview_candidates"],
-        "translations": translated.get("translation_map", {}),
-        "chapterStats": filtered["chapter_stats"],
-        "note": "Preview generation stages are scaffolded for phase 3/4.",
-    }
-    job.summary = {
-        "wordCount": filtered["word_count"],
-        "uniqueWords": filtered["unique_words"],
-        "filteredWordCount": filtered["filtered_word_count"],
-        "filteredUniqueWords": filtered["filtered_unique_words"],
-        "filteredOutCount": filtered["filtered_out_count"],
-        "candidateCount": len(filtered["candidates"]),
-    }
-    job.progress = 100
-    job.current_stage = "completed"
-    job.status = IngestionJobStatus.SUCCEEDED
-    job.completed_at = timezone.now()
-    job.save(
-        update_fields=[
-            "result_payload",
-            "summary",
-            "progress",
-            "current_stage",
-            "status",
-            "completed_at",
-            "updated_at",
-        ]
-    )
+    candidates: list[Candidate] = filtered["candidates"]
+    translation_map: dict[str, str] = translated.get("translation_map", {})
+
+    try:
+        with transaction.atomic():
+            # Idempotent bookcard creation
+            bookcard = _save_bookcard_with_idempotency_check(
+                job=job,
+                title=getattr(job, "metadata_title", "Untitled"),
+                author=getattr(job, "metadata_authors", []),
+                epub_id=getattr(job, "metadata_epub_id", ""),
+            )
+
+            # Build and bulk-insert all flashcards
+            flashcard_dicts = [
+                _candidate_to_flashcard_dict(
+                    c,
+                    bookcard,
+                    job.source_language,
+                    job.target_language,
+                    translation_map,
+                )
+                for c in candidates
+            ]
+            flashcards = FlashCard.objects.bulk_create(
+                [FlashCard(**d) for d in flashcard_dicts],
+                batch_size=500,
+            )
+            flashcard_count = len(flashcards)
+
+            # Link bookcard to job inside atomic block
+            job.bookcard = bookcard
+
+            # Compact result payload: bookcard info + top 10 preview
+            job.result_payload = {
+                "bookcardId": bookcard.id,
+                "bookcardTitle": bookcard.title,
+                "bookcardAuthor": bookcard.author,
+                "materializedCount": flashcard_count,
+                "previewCandidates": translated["preview_candidates"][:10],
+                "translationMap": translation_map,
+                "hasTranslation": bool(translation_map),
+            }
+
+            job.summary = {
+                "wordCount": filtered["word_count"],
+                "uniqueWords": filtered["unique_words"],
+                "filteredWordCount": filtered["filtered_word_count"],
+                "filteredUniqueWords": filtered["filtered_unique_words"],
+                "filteredOutCount": filtered["filtered_out_count"],
+                "candidateCount": len(candidates),
+                "flashcardsSaved": flashcard_count,
+            }
+
+            job.progress = 100
+            job.current_stage = "completed"
+            job.status = IngestionJobStatus.SUCCEEDED
+            job.completed_at = timezone.now()
+            job.save(
+                update_fields=[
+                    "bookcard",
+                    "result_payload",
+                    "summary",
+                    "progress",
+                    "current_stage",
+                    "status",
+                    "completed_at",
+                    "updated_at",
+                ]
+            )
+    except Exception as e:
+        # Transaction rolls back automatically
+        job.status = IngestionJobStatus.FAILED
+        job.error_payload = {
+            "error": f"Finalization failed: {str(e)}",
+            "stage": "finalizing",
+        }
+        job.completed_at = timezone.now()
+        job.save(
+            update_fields=[
+                "status",
+                "error_payload",
+                "completed_at",
+                "updated_at",
+            ]
+        )
+        raise
 
 
 def _mark_cancelled(job: IngestionJob) -> None:
