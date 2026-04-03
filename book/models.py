@@ -164,7 +164,7 @@ class IngestionJob(models.Model):
 
     source_language = models.CharField(max_length=8, choices=Language.choices)
     target_language = models.CharField(max_length=8, choices=Language.choices)
-    card_count_target = models.PositiveIntegerField(default=250)
+    card_count_target = models.PositiveIntegerField(default=150)
     rarity_profile = models.CharField(max_length=64, default="standard")
 
     status = models.CharField(

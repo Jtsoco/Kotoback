@@ -94,7 +94,6 @@ class BookSummarySerializer(serializers.ModelSerializer):
         fields = [
             "id",
             "title",
-            "info",
         ]
 
 

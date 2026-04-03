@@ -35,6 +35,9 @@ def _container_xml(rootfile_path: str) -> str:
 def _package_opf(
     manifest_items: list[tuple[str, str]],
     spine_ids: list[str],
+    title: str = "Test",
+    identifier: str = "urn:uuid:test",
+    creators: list[str] | None = None,
 ) -> str:
     manifest_xml = "\n".join(
         (
@@ -47,6 +50,13 @@ def _package_opf(
         f'    <itemref idref="{item_id}"/>' for item_id in spine_ids
     )
 
+    creators_xml = ""
+    if creators:
+        creators_xml = "\n".join(
+            f"    <dc:creator>{creator}</dc:creator>" for creator in creators
+        )
+        creators_xml = "\n" + creators_xml
+
     return f'''<?xml version="1.0" encoding="UTF-8"?>
 <package
     xmlns="http://www.idpf.org/2007/opf"
@@ -54,9 +64,9 @@ def _package_opf(
     unique-identifier="bookid"
 >
   <metadata xmlns:dc="http://purl.org/dc/elements/1.1/">
-    <dc:identifier id="bookid">urn:uuid:test</dc:identifier>
-    <dc:title>Test</dc:title>
-    <dc:language>en</dc:language>
+    <dc:identifier id="bookid">{identifier}</dc:identifier>
+    <dc:title>{title}</dc:title>
+    <dc:language>en</dc:language>{creators_xml}
   </metadata>
   <manifest>
 {manifest_xml}
@@ -74,17 +84,31 @@ def _write_test_epub(
     rootfile_path: str,
     manifest_items: list[tuple[str, str]],
     spine_ids: list[str],
+    title: str = "Test",
+    identifier: str = "urn:uuid:test",
+    creators: list[str] | None = None,
     extra_files: dict[str, str] | None = None,
 ) -> None:
     with ZipFile(epub_path, "w") as zf:
         zf.writestr("META-INF/container.xml", _container_xml(rootfile_path))
-        zf.writestr(rootfile_path, _package_opf(manifest_items, spine_ids))
+        zf.writestr(
+            rootfile_path,
+            _package_opf(
+                manifest_items,
+                spine_ids,
+                title=title,
+                identifier=identifier,
+                creators=creators,
+            ),
+        )
         if extra_files:
             for archive_path, content in extra_files.items():
                 zf.writestr(archive_path, content)
 
 
-class ExtractEpubTests(SimpleTestCase):
+class ExtractSpineTests(SimpleTestCase):
+    """Test EPUB spine extraction: rootfile resolution, path ordering, text extraction."""
+
     def test_get_rootfile_path_from_epub_top_level_opf(self):
         with TemporaryDirectory() as tmp_dir:
             epub_path = Path(tmp_dir) / "top-level.epub"
