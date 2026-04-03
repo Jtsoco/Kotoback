@@ -354,6 +354,13 @@ def _stage_finalize(
                     "updated_at",
                 ]
             )
+
+            # Delete source EPUB file after successful completion (from storage only)
+            if job.source_file:
+                try:
+                    job.source_file.storage.delete(job.source_file.name)
+                except Exception:
+                    pass  # File may not exist
     except Exception as e:
         # Transaction rolls back automatically
         job.status = IngestionJobStatus.FAILED
@@ -446,3 +453,69 @@ def process_ingestion_job(self, job_id: int):
         job = _get_job(job_id)
         _mark_failed(job, exc)
         raise
+
+
+@shared_task
+def cleanup_old_ingestion_jobs():
+    """Delete IngestionJobs older than 2 days and their EPUB files."""
+    from datetime import timedelta
+
+    cutoff = timezone.now() - timedelta(days=2)
+    old_jobs = IngestionJob.objects.filter(created_at__lt=cutoff)
+
+    count = 0
+    for job in old_jobs:
+        # Delete file from storage directly, bypassing model validation
+        if job.source_file:
+            try:
+                job.source_file.storage.delete(job.source_file.name)
+            except Exception:
+                pass  # File may not exist
+        count += 1
+
+    old_jobs.delete()
+    return f"Cleaned up {count} old jobs"
+
+
+@shared_task
+def cleanup_orphaned_epubs():
+    """Delete EPUB files not referenced by any job and empty parent directories."""
+    import os
+    from pathlib import Path
+
+    media_dir = Path("/app/media/ingestion-jobs")
+    if not media_dir.exists():
+        return "Media directory does not exist"
+
+    jobs_with_files = set(IngestionJob.objects.filter(
+        source_file__isnull=False
+    ).values_list("source_file", flat=True))
+
+    file_count = 0
+    dir_count = 0
+
+    # First pass: delete orphaned files
+    for root, dirs, files in os.walk(media_dir):
+        for file in files:
+            file_path = os.path.join(root, file)
+            relative_path = file_path.replace("/app/media/", "")
+
+            if relative_path not in jobs_with_files:
+                try:
+                    os.remove(file_path)
+                    file_count += 1
+                except OSError:
+                    pass  # File may have been deleted already
+
+    # Second pass: remove empty directories from bottom-up
+    for root, dirs, files in os.walk(media_dir, topdown=False):
+        for dir_name in dirs:
+            dir_path = os.path.join(root, dir_name)
+            try:
+                if not os.listdir(dir_path):  # Check if empty
+                    os.rmdir(dir_path)
+                    dir_count += 1
+            except OSError:
+                pass  # Directory not empty or other error
+
+    return f"Cleaned up {file_count} orphaned EPUBs, {dir_count} empty directories"
