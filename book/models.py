@@ -165,7 +165,7 @@ class IngestionJob(models.Model):
     source_language = models.CharField(max_length=8, choices=Language.choices)
     target_language = models.CharField(max_length=8, choices=Language.choices)
     card_count_target = models.PositiveIntegerField(default=150)
-    rarity_profile = models.CharField(max_length=64, default="standard")
+    rarity_profile = models.JSONField(default=dict, blank=True)  # e.g. {filter_class": common_ja, common_words: 2k, include_newspaper_kanji: true}
 
     status = models.CharField(
         max_length=16,

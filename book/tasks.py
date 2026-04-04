@@ -130,11 +130,15 @@ def _save_bookcard_with_idempotency_check(
 
 def _get_filter_selection(job: IngestionJob) -> WordFilterSelection:
     # Filter selection persistence will be wired through API/model fields.
-    _ = job
-    return {
-        "common_japanese": None,
-        "include_newspaper_kanji": False,
+    # get word filter class info from rarity profile in json of job field
+    rarity_profile = job.rarity_profile or {}
+    word_filter_class = {
+        "filter_class": rarity_profile.get("filter_class", None),
+        "common_words": rarity_profile.get("common_words", None),
+        "include_newspaper_kanji": rarity_profile.get("include_newspaper_kanji", False),
     }
+
+    return word_filter_class
 
 
 def _stage_tokenize_and_rank(

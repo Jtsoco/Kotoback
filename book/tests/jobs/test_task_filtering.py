@@ -30,6 +30,7 @@ class IngestionTaskFilteringTests(APITestCase):
             source_language="en",
             target_language="ja",
             card_count_target=5,
+            rarity_profile={"filter_class": "common_en", "common_words": 10000},
             status=IngestionJobStatus.PROCESSING,
         )
 
@@ -68,6 +69,7 @@ class IngestionTaskFilteringTests(APITestCase):
             source_language="en",
             target_language="ja",
             card_count_target=10,
+            rarity_profile={"filter_class": "common_japanese", "common_words": "6k", "include_newspaper_kanji": False},
             status=IngestionJobStatus.PROCESSING,
         )
 
@@ -98,3 +100,35 @@ class IngestionTaskFilteringTests(APITestCase):
         # The Japanese word should be filtered out, leaving only the English word
         self.assertEqual(len(result["candidates"]), 1)
         self.assertEqual(result["candidates"][0]["base"], "word1")
+
+    def test_filter_sub_method_gets_correct_rarity_profile(self):
+        """Verify filter stage correctly retrieves rarity profile from job."""
+        from book.tasks import _get_filter_selection
+
+        job = IngestionJob.objects.create(
+            user=self.user,
+            source_file=SimpleUploadedFile(
+                "test.epub",
+                b"PK\x03\x04",
+                content_type="application/epub+zip",
+            ),
+            source_language="en",
+            target_language="ja",
+            card_count_target=10,
+            rarity_profile={"filter_class": "common_english", "common_words": "2k"},
+
+            status=IngestionJobStatus.PROCESSING,
+            )
+
+        # global_buckets = {
+        #     "word1": {
+        #         "base": "word1",
+        #         "total_count": 100,
+        #         "surface_forms": {"word1"},
+        #         "pos_counts": {"NOUN": 100},
+        #     },
+        # }
+        selection = _get_filter_selection(job)
+        self.assertEqual(selection["filter_class"], "common_english")
+        self.assertEqual(selection["common_words"], "2k")
+        self.assertEqual(selection["include_newspaper_kanji"], False)
