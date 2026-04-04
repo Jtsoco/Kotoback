@@ -486,8 +486,10 @@ def cleanup_orphaned_epubs():
     """Delete EPUB files not referenced by any job and empty parent directories."""
     import os
     from pathlib import Path
+    # use django.conf.settings.MEDIA_ROOT if available instead of hardcoding
+    from django.conf import settings
 
-    media_dir = Path("/app/media/ingestion-jobs")
+    media_dir = Path(f"{settings.MEDIA_ROOT}/")  # Ensure trailing slash for consistent relative paths
     if not media_dir.exists():
         return "Media directory does not exist"
 
@@ -501,16 +503,15 @@ def cleanup_orphaned_epubs():
     # First pass: delete orphaned files
     for root, dirs, files in os.walk(media_dir):
         for file in files:
-            file_path = os.path.join(root, file)
-            relative_path = file_path.replace("/app/media/", "")
+            file_path = Path(root) / file
+            relative_path = str(file_path.relative_to(media_dir))
 
             if relative_path not in jobs_with_files:
                 try:
-                    os.remove(file_path)
+                    file_path.unlink()
                     file_count += 1
                 except OSError:
-                    pass  # File may have been deleted already
-
+                    pass
     # Second pass: remove empty directories from bottom-up
     for root, dirs, files in os.walk(media_dir, topdown=False):
         for dir_name in dirs:

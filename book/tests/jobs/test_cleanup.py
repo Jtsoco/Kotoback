@@ -226,3 +226,20 @@ class CleanupOrphanedEpubsTests(TestCase):
         result = cleanup_orphaned_epubs()
         self.assertIsNotNone(result)
         self.assertTrue(len(result) > 0)
+
+    def test_cleanup_deletes_orphaned_files(self):
+        """Verify files not referenced by any job are deleted."""
+        # Create an orphaned file (not linked to any job)
+        orphan_path = Path(tempfile.gettempdir()) / "orphan.epub"
+        with open(orphan_path, "wb") as f:
+            f.write(create_test_epub())
+
+        # Ensure the file exists before cleanup
+        self.assertTrue(orphan_path.exists())
+
+        # Run cleanup
+        result = cleanup_orphaned_epubs()
+
+        # Orphaned file should be deleted
+        self.assertFalse(orphan_path.exists())
+        self.assertIn("orphaned", result.lower())
