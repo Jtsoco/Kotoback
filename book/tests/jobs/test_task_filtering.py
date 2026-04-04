@@ -53,3 +53,48 @@ class IngestionTaskFilteringTests(APITestCase):
         result = _stage_filter_candidates(job, ranked)
 
         self.assertLessEqual(len(result["candidates"]), 5)
+
+    def test_filter_candidates_filters_japanese(self):
+        """Verify filter stage applies Japanese-specific kanji filtering."""
+        from book.tasks import _stage_filter_candidates
+
+        job = IngestionJob.objects.create(
+            user=self.user,
+            source_file=SimpleUploadedFile(
+                "test.epub",
+                b"PK\x03\x04",
+                content_type="application/epub+zip",
+            ),
+            source_language="en",
+            target_language="ja",
+            card_count_target=10,
+            status=IngestionJobStatus.PROCESSING,
+        )
+
+        global_buckets = {
+            "word1": {
+                "base": "word1",
+                "total_count": 100,
+                "surface_forms": {"word1"},
+                "pos_counts": {"NOUN": 100},
+            },
+            "難しい": {
+                "base": "難しい",
+                "total_count": 50,
+                "surface_forms": {"難しい"},
+                "pos_counts": {"ADJ": 50},
+            },
+        }
+
+        ranked = {
+            "global_buckets": global_buckets,
+            "word_count": 150,
+            "unique_words": 2,
+            "chapter_stats": [],
+        }
+
+        result = _stage_filter_candidates(job, ranked)
+
+        # The Japanese word should be filtered out, leaving only the English word
+        self.assertEqual(len(result["candidates"]), 1)
+        self.assertEqual(result["candidates"][0]["base"], "word1")
