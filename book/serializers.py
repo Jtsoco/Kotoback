@@ -163,7 +163,6 @@ class IngestionJobUploadSerializer(
             "target_language",
             "card_count_target",
             "rarity_profile",
-            "bookcard",
             "status",
             "progress",
             "current_stage",

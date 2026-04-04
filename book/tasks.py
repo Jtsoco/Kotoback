@@ -128,6 +128,23 @@ def _save_bookcard_with_idempotency_check(
     return bookcard
 
 
+def _save_bookcard(
+    job: IngestionJob,
+    title: str,
+    author: list[str],
+    epub_id: str,
+) -> BookCard:
+
+    # Create new BookCard
+    bookcard = BookCard.objects.create(
+        user=job.user,
+        title=title,
+        author=author,
+        epub_id=epub_id,
+    )
+    return bookcard
+
+
 def _get_filter_selection(job: IngestionJob) -> WordFilterSelection:
     # Filter selection persistence will be wired through API/model fields.
     # get word filter class info from rarity profile in json of job field
@@ -293,8 +310,8 @@ def _stage_finalize(
 
     try:
         with transaction.atomic():
-            # Idempotent bookcard creation
-            bookcard = _save_bookcard_with_idempotency_check(
+            # its transaction.atomic, don't need idempotency check because it will rollback on failure
+            bookcard = _save_bookcard(
                 job=job,
                 title=getattr(job, "metadata_title", "Untitled"),
                 author=getattr(job, "metadata_authors", []),
