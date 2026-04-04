@@ -83,7 +83,6 @@ class BookSerializer(serializers.ModelSerializer):
         fields = [
             "id",
             "title",
-            "info",
             "default_flashcards",
         ]
 
