@@ -1,6 +1,7 @@
 import shutil
 import tempfile
 from unittest.mock import patch
+import json
 
 from django.contrib.auth import get_user_model
 from django.core.files.uploadedfile import SimpleUploadedFile
@@ -61,7 +62,7 @@ class IngestionJobApiTests(APITestCase):
             "sourceLanguage": "en",
             "targetLanguage": "ja",
             "cardCountTarget": 100,
-            "rarityProfile": "standard",
+            "rarityProfile": json.dumps({"filter_class": "common_english", "common_words": "6k", "include_newspaper_kanji": False}),
         }
 
         with self.captureOnCommitCallbacks(execute=True):

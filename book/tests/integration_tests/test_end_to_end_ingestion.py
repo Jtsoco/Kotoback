@@ -3,6 +3,7 @@
 import shutil
 import tempfile
 from unittest.mock import patch, MagicMock
+import json
 
 from django.contrib.auth import get_user_model
 from django.test import override_settings
@@ -63,7 +64,7 @@ class EndToEndIngestionIntegrationTest(APITestCase):
             "sourceLanguage": "en",
             "targetLanguage": "ja",
             "cardCountTarget": 10,
-            "rarityProfile": "standard",
+            "rarityProfile": json.dumps({"filter_class": "common_english", "common_words": "6k", "include_newspaper_kanji": False}),
             "bookcard": self.bookcard.id,
         }
 
@@ -99,7 +100,7 @@ class EndToEndIngestionIntegrationTest(APITestCase):
             "sourceLanguage": "ja",
             "targetLanguage": "en",
             "cardCountTarget": 10,
-            "rarityProfile": "standard",
+            "rarityProfile": json.dumps({"filter_class": "common_japanese", "common_words": "6k", "include_newspaper_kanji": False}),
             "bookcard": self.bookcard.id,
         }
 
@@ -127,7 +128,7 @@ class EndToEndIngestionIntegrationTest(APITestCase):
             "sourceLanguage": "en",
             "targetLanguage": "ja",
             "cardCountTarget": 20,
-            "rarityProfile": "standard",
+            "rarityProfile": json.dumps({"filter_class": "common_english", "common_words": "6k", "include_newspaper_kanji": False}),
             "bookcard": self.bookcard.id,
         }
 
@@ -157,7 +158,7 @@ class EndToEndIngestionIntegrationTest(APITestCase):
             "sourceLanguage": "en",
             "targetLanguage": "ja",
             "cardCountTarget": 10,
-            "rarityProfile": "standard",
+            "rarityProfile": json.dumps({"filter_class": "common_english", "common_words": "6k", "include_newspaper_kanji": False}),
             "bookcard": self.bookcard.id,
         }
 
@@ -263,7 +264,7 @@ class EndToEndIngestionIntegrationTest(APITestCase):
                 "sourceLanguage": "en",
                 "targetLanguage": "ja",
                 "cardCountTarget": 10,
-                "rarityProfile": "standard",
+                "rarityProfile": json.dumps({"filter_class": "common_english", "common_words": "6k", "include_newspaper_kanji": False}),
                 "bookcard": self.bookcard.id,
             }
 
