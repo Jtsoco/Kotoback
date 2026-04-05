@@ -11,6 +11,7 @@ from django.test import override_settings, TransactionTestCase
 from django.urls import reverse
 from rest_framework.authtoken.models import Token
 from rest_framework.test import APIClient
+import json
 
 from book.models import BookCard, IngestionJob, IngestionJobStatus, FlashCard
 
@@ -103,7 +104,7 @@ class FullPipelineIntegrationTest(TransactionTestCase):
                 "sourceLanguage": "en",
                 "targetLanguage": "ja",
                 "cardCountTarget": 50,
-                "rarityProfile": "standard",
+                "rarityProfile": json.dumps({"filter_class": "common_english", "common_words": "6k", "include_newspaper_kanji": False}),
             }
             response = self.client.post(url, payload, format="multipart")
 
@@ -174,7 +175,7 @@ class FullPipelineIntegrationTest(TransactionTestCase):
                 "sourceLanguage": "ja",
                 "targetLanguage": "en",
                 "cardCountTarget": 50,
-                "rarityProfile": "standard",
+                "rarityProfile": json.dumps({"filter_class": "common_japanese", "common_words": "6k", "include_newspaper_kanji": False}),
             }
             response = self.client.post(url, payload, format="multipart")
 
@@ -215,13 +216,14 @@ class FullPipelineIntegrationTest(TransactionTestCase):
                 "sourceLanguage": "en",
                 "targetLanguage": "ja",
                 "cardCountTarget": 20,
-                "rarityProfile": "standard",
+                "rarityProfile": json.dumps({"filter_class": "common_english", "common_words": "6k", "include_newspaper_kanji": False}),
             }
             response = self.client.post(url, payload, format="multipart")
 
         self.assertEqual(response.status_code, 201)
         job_id = response.data["id"]
         job = IngestionJob.objects.get(id=job_id)
+
 
         # User 2 tries to access job status
         User = get_user_model()

@@ -30,7 +30,7 @@ class IngestionTaskFilteringTests(APITestCase):
             source_language="en",
             target_language="ja",
             card_count_target=5,
-            rarity_profile={"filter_class": "common_en", "common_words": 10000},
+            rarity_profile={"filter_class": "common_en", "common_words": "10k"},
             status=IngestionJobStatus.PROCESSING,
         )
 

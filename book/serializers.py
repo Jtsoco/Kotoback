@@ -153,6 +153,7 @@ class IngestionJobUploadSerializer(
     )
     progress = serializers.IntegerField(read_only=True)
     current_stage = serializers.CharField(read_only=True)
+    rarity_profile = serializers.JSONField(required=False, allow_null=True)
 
     class Meta:
         model = IngestionJob
@@ -187,6 +188,22 @@ class IngestionJobUploadSerializer(
             raise serializers.ValidationError(
                 "cardCountTarget must be between 1 and 1000."
             )
+        return value
+
+    def validate_rarity_profile(self, value):
+        """
+        Handle JSON string parsing from multipart form data.
+        If value is a JSON string, parse it to a dict.
+        """
+        import json
+        
+        if isinstance(value, str):
+            try:
+                return json.loads(value)
+            except (json.JSONDecodeError, TypeError):
+                raise serializers.ValidationError(
+                    "rarityProfile must be valid JSON"
+                )
         return value
 
     def validate(self, attrs):
