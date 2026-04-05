@@ -16,6 +16,13 @@ from pathlib import Path
 from dotenv import load_dotenv
 from django.core.exceptions import ImproperlyConfigured
 
+
+def env_int(name: str, default: int) -> int:
+    value = os.environ.get(name)
+    if value in (None, ""):
+        return default
+    return int(value)
+
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
 
@@ -67,6 +74,7 @@ INSTALLED_APPS = [
     'dj_rest_auth.registration',
     'book',
     'study',
+    'django_celery_results',
 ]
 
 SITE_ID = 1
@@ -195,3 +203,46 @@ REST_FRAMEWORK = {
         'rest_framework.renderers.BrowsableAPIRenderer',
     ],
 }
+
+# ---------------------------------------------------------------------------
+# Celery
+# ---------------------------------------------------------------------------
+CELERY_BROKER_URL = (
+    os.environ.get('CELERY_BROKER_URL')
+    or os.environ.get('REDIS_HOST')
+)
+if not CELERY_BROKER_URL:
+    if DEBUG:
+        CELERY_BROKER_URL = 'redis://127.0.0.1:6379/0'
+    else:
+        raise RuntimeError(
+            'CELERY_BROKER_URL must be set when DJANGO_DEBUG is disabled.'
+        )
+CELERY_RESULT_BACKEND = 'django-db'
+CELERY_CACHE_BACKEND = 'default'
+CELERY_ACCEPT_CONTENT = ['json']
+CELERY_TASK_SERIALIZER = 'json'
+CELERY_RESULT_SERIALIZER = 'json'
+
+
+# File upload settings
+MEDIA_URL = '/media/'
+MEDIA_ROOT = Path(os.environ.get('MEDIA_ROOT') or str(BASE_DIR / 'media'))
+
+# Maximum request body size accepted by Django before RequestDataTooBig.
+DATA_UPLOAD_MAX_MEMORY_SIZE = env_int(
+    'DATA_UPLOAD_MAX_MEMORY_SIZE',
+    25 * 1024 * 1024,
+)
+# Anything larger raises RequestDataTooBig; return 413 to the client.
+# This prevents oversized uploads from overwhelming the server.
+
+# Files larger than this are streamed to disk instead of kept in RAM.
+FILE_UPLOAD_MAX_MEMORY_SIZE = env_int(
+    'FILE_UPLOAD_MAX_MEMORY_SIZE',
+    2 * 1024 * 1024,
+)
+# Files larger than this will be streamed to disk instead of kept in memory.
+
+# App-level max EPUB payload size for serializer/view validation.
+EPUB_MAX_UPLOAD_SIZE = env_int('EPUB_MAX_UPLOAD_SIZE', 25 * 1024 * 1024)

@@ -1,8 +1,8 @@
-import string
 from django.conf import settings
 from django.core.exceptions import ValidationError
 from django.db import models
 from django.db.models import Q
+from django.core.validators import MaxValueValidator, MinValueValidator
 
 
 class Language(models.TextChoices):
@@ -11,8 +11,9 @@ class Language(models.TextChoices):
 
 
 class Book(models.Model):
-    title = models.CharField(max_length=512)
-    info = models.TextField(blank=True)
+    identifier = models.CharField(max_length=256, unique=True, db_index=True)
+    title = models.CharField(max_length=512, db_index=True)
+    metadata = models.JSONField(default=dict, blank=True)
 
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
@@ -31,7 +32,18 @@ class BookCard(models.Model):
         on_delete=models.CASCADE,
         related_name="bookcards",
     )
-    book = models.ForeignKey(Book, on_delete=models.CASCADE, related_name="bookcards")
+    book = models.ForeignKey(
+        Book,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="bookcards",
+    )
+
+    # EPUB metadata fields (temporary until Book integration)
+    title = models.CharField(max_length=512, blank=True)
+    author = models.JSONField(default=list, blank=True)  # List of author names
+    epub_id = models.CharField(max_length=256, blank=True)
 
     # When the user last studied this bookcard (for homepage ordering).
     last_studied_at = models.DateTimeField(null=True, blank=True)
@@ -40,12 +52,10 @@ class BookCard(models.Model):
     updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
-        constraints = [
-            models.UniqueConstraint(fields=["user", "book"], name="uniq_bookcard_user_book"),
-        ]
+        constraints = []
 
     def __str__(self) -> str:
-        return f"{self.user_id}:{self.book_id}"
+        return self.title or f"BookCard({self.user_id})"
 
 
 class DefaultFlashCard(models.Model):
@@ -126,3 +136,78 @@ class FlashCard(models.Model):
             raise ValidationError("back_data must have studyWord")
         return super().save(*args, **kwargs)
         # make sure front end and back end of flashcards have studyWord
+
+
+class IngestionJobStatus(models.TextChoices):
+    QUEUED = "queued", "Queued"
+    PROCESSING = "processing", "Processing"
+    SUCCEEDED = "succeeded", "Succeeded"
+    FAILED = "failed", "Failed"
+    CANCELLED = "cancelled", "Cancelled"
+
+
+class IngestionJob(models.Model):
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="ingestion_jobs",
+    )
+    bookcard = models.ForeignKey(
+        BookCard,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="ingestion_jobs",
+    )
+
+    source_file = models.FileField(upload_to="ingestion-jobs/%Y/%m/%d/")
+
+    source_language = models.CharField(max_length=8, choices=Language.choices)
+    target_language = models.CharField(max_length=8, choices=Language.choices)
+    card_count_target = models.PositiveIntegerField(default=150)
+    rarity_profile = models.JSONField(default=dict, blank=True)  # e.g. {filter_class": common_ja, common_words: 2k, include_newspaper_kanji: true}
+
+    status = models.CharField(
+        max_length=16,
+        choices=IngestionJobStatus.choices,
+        default=IngestionJobStatus.QUEUED,
+    )
+    progress = models.PositiveSmallIntegerField(
+        default=0,
+        validators=[MinValueValidator(0), MaxValueValidator(100)],
+    )
+    current_stage = models.CharField(max_length=64, blank=True, default="")
+
+    result_payload = models.JSONField(default=dict, blank=True)
+    error_payload = models.JSONField(default=dict, blank=True)
+    summary = models.JSONField(default=dict, blank=True)
+
+    celery_task_id = models.CharField(max_length=255, blank=True, default="")
+    completed_at = models.DateTimeField(null=True, blank=True)
+
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        constraints = [
+            models.CheckConstraint(
+                condition=~Q(source_language=models.F("target_language")),
+                name="ingestion_job_source_target_language_different",
+            ),
+            models.CheckConstraint(
+                condition=Q(progress__gte=0) & Q(progress__lte=100),
+                name="ingestion_job_progress_between_0_and_100",
+            ),
+        ]
+
+    def clean(self) -> None:
+        if self.source_language == self.target_language:
+            raise ValidationError(
+                "source_language and target_language cannot be the same"
+            )
+        if self.bookcard_id and self.bookcard.user_id != self.user_id:
+            raise ValidationError("bookcard must belong to the same user")
+
+    def save(self, *args, **kwargs):
+        self.full_clean()
+        return super().save(*args, **kwargs)

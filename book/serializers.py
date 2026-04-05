@@ -3,10 +3,21 @@ from rest_framework import serializers
 
 from utils.serializers import CamelCaseInputMixin
 
-from .models import Book, BookCard, DefaultFlashCard, FlashCard
+from .models import (
+    Book,
+    BookCard,
+    DefaultFlashCard,
+    FlashCard,
+    IngestionJob,
+    IngestionJobStatus,
+)
+from .upload_validators import validate_epub_upload
 
 
-class DefaultFlashCardSerializer(CamelCaseInputMixin, serializers.ModelSerializer):
+class DefaultFlashCardSerializer(
+    CamelCaseInputMixin,
+    serializers.ModelSerializer,
+):
     class Meta:
         model = DefaultFlashCard
         fields = [
@@ -21,7 +32,9 @@ class DefaultFlashCardSerializer(CamelCaseInputMixin, serializers.ModelSerialize
 class FlashCardSerializer(CamelCaseInputMixin, serializers.ModelSerializer):
     def _require_study_word(self, data: object) -> None:
         if not isinstance(data, dict):
-            raise serializers.ValidationError("frontData/backData must be a JSON object.")
+            raise serializers.ValidationError(
+                "frontData/backData must be a JSON object."
+            )
         if "studyWord" not in data and "StudyWord" not in data:
             raise serializers.ValidationError(
                 "frontData/backData must include `studyWord` (or `StudyWord`)."
@@ -70,7 +83,6 @@ class BookSerializer(serializers.ModelSerializer):
         fields = [
             "id",
             "title",
-            "info",
             "default_flashcards",
         ]
 
@@ -81,7 +93,6 @@ class BookSummarySerializer(serializers.ModelSerializer):
         fields = [
             "id",
             "title",
-            "info",
         ]
 
 
@@ -108,7 +119,10 @@ class BookCardSerializer(CamelCaseInputMixin, serializers.ModelSerializer):
         read_only_fields = ["last_studied_at", "created_at", "updated_at"]
 
 
-class HomepageBookCardSerializer(CamelCaseInputMixin, serializers.ModelSerializer):
+class HomepageBookCardSerializer(
+    CamelCaseInputMixin,
+    serializers.ModelSerializer,
+):
     book = BookSummarySerializer(read_only=True)
     flashcard_count = serializers.IntegerField(read_only=True)
 
@@ -127,3 +141,115 @@ class HomepageBookCardSerializer(CamelCaseInputMixin, serializers.ModelSerialize
 def annotate_flashcard_count(queryset):
     return queryset.annotate(flashcard_count=Count("flashcards"))
 
+
+class IngestionJobUploadSerializer(
+    CamelCaseInputMixin,
+    serializers.ModelSerializer,
+):
+    file = serializers.FileField(source="source_file", write_only=True)
+    status = serializers.ChoiceField(
+        choices=IngestionJobStatus.choices,
+        read_only=True,
+    )
+    progress = serializers.IntegerField(read_only=True)
+    current_stage = serializers.CharField(read_only=True)
+    rarity_profile = serializers.JSONField(required=False, allow_null=True)
+
+    class Meta:
+        model = IngestionJob
+        fields = [
+            "id",
+            "file",
+            "source_language",
+            "target_language",
+            "card_count_target",
+            "rarity_profile",
+            "status",
+            "progress",
+            "current_stage",
+            "created_at",
+            "updated_at",
+        ]
+        read_only_fields = [
+            "id",
+            "bookcard",
+            "status",
+            "progress",
+            "current_stage",
+            "created_at",
+            "updated_at",
+        ]
+
+    def validate_file(self, value):
+        return validate_epub_upload(value)
+
+    def validate_card_count_target(self, value):
+        if value < 1 or value > 1000:
+            raise serializers.ValidationError(
+                "cardCountTarget must be between 1 and 1000."
+            )
+        return value
+
+    def validate_rarity_profile(self, value):
+        """
+        Handle JSON string parsing from multipart form data.
+        If value is a JSON string, parse it to a dict.
+        """
+        import json
+        
+        if isinstance(value, str):
+            try:
+                return json.loads(value)
+            except (json.JSONDecodeError, TypeError):
+                raise serializers.ValidationError(
+                    "rarityProfile must be valid JSON"
+                )
+        return value
+
+    def validate(self, attrs):
+        source_language = attrs.get("source_language")
+        target_language = attrs.get("target_language")
+        if source_language == target_language:
+            raise serializers.ValidationError(
+                "source_language and target_language cannot be the same"
+            )
+        return attrs
+
+
+class IngestionJobStatusSerializer(
+    CamelCaseInputMixin,
+    serializers.ModelSerializer,
+):
+    class Meta:
+        model = IngestionJob
+        fields = [
+            "id",
+            "bookcard",
+            "status",
+            "progress",
+            "current_stage",
+            "summary",
+            "error_payload",
+            "created_at",
+            "updated_at",
+            "completed_at",
+        ]
+        read_only_fields = fields
+
+
+class IngestionJobResultSerializer(
+    CamelCaseInputMixin,
+    serializers.ModelSerializer,
+):
+    class Meta:
+        model = IngestionJob
+        fields = [
+            "id",
+            "bookcard",
+            "status",
+            "result_payload",
+            "summary",
+            "completed_at",
+            "updated_at",
+        ]
+        read_only_fields = fields

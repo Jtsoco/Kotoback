@@ -1,2 +1,13 @@
 .env
 plans/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.db
+media/
+ingestion-jobs/
+.DS_Store
+db.sqlite3
+*.log
+*.cpython-313.pyc

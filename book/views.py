@@ -5,14 +5,18 @@ from rest_framework import generics, permissions, status
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from .models import Book, BookCard, FlashCard
+from .models import Book, BookCard, FlashCard, IngestionJob, IngestionJobStatus
 from .serializers import (
     BookCardSerializer,
     BookSerializer,
     FlashCardSerializer,
     HomepageBookCardSerializer,
+    IngestionJobResultSerializer,
+    IngestionJobStatusSerializer,
+    IngestionJobUploadSerializer,
     annotate_flashcard_count,
 )
+from .tasks import process_ingestion_job
 
 
 class HomepageView(APIView):
@@ -150,3 +154,85 @@ class FlashCardDetailView(generics.RetrieveUpdateDestroyAPIView):
         bookcard = instance.bookcard
         bookcard.last_studied_at = timezone.now()
         bookcard.save(update_fields=["last_studied_at"])
+
+
+class IngestionJobUploadView(generics.CreateAPIView):
+    serializer_class = IngestionJobUploadSerializer
+
+    def create(self, request, *args, **kwargs):
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        job = serializer.save(user=request.user)
+
+        def enqueue_ingestion_job() -> None:
+            async_result = process_ingestion_job.delay(job.id)
+            IngestionJob.objects.filter(id=job.id).update(
+                celery_task_id=async_result.id,
+            )
+
+        transaction.on_commit(enqueue_ingestion_job)
+
+        out = IngestionJobStatusSerializer(job)
+        return Response(out.data, status=status.HTTP_201_CREATED)
+
+
+class IngestionJobStatusView(generics.RetrieveAPIView):
+    serializer_class = IngestionJobStatusSerializer
+
+    def get_queryset(self):
+        return IngestionJob.objects.filter(user=self.request.user)
+
+    def get_object(self):
+        return get_object_or_404(
+            self.get_queryset(),
+            id=self.kwargs["job_id"],
+        )
+
+
+class IngestionJobResultView(APIView):
+    def get(self, request, *args, **kwargs):
+        job = get_object_or_404(
+            IngestionJob,
+            id=kwargs["job_id"],
+            user=request.user,
+        )
+        if job.status != IngestionJobStatus.SUCCEEDED:
+            return Response(
+                {
+                    "detail": "Result is not ready yet.",
+                    "status": job.status,
+                    "progress": job.progress,
+                },
+                status=status.HTTP_409_CONFLICT,
+            )
+        serializer = IngestionJobResultSerializer(job)
+        return Response(serializer.data)
+
+
+class IngestionJobCancelView(APIView):
+    def post(self, request, *args, **kwargs):
+        job = get_object_or_404(
+            IngestionJob,
+            id=kwargs["job_id"],
+            user=request.user,
+        )
+        if job.status in (
+            IngestionJobStatus.SUCCEEDED,
+            IngestionJobStatus.FAILED,
+            IngestionJobStatus.CANCELLED,
+        ):
+            return Response(
+                {
+                    "id": job.id,
+                    "status": job.status,
+                    "detail": "Job is not cancellable in its current state.",
+                },
+                status=status.HTTP_409_CONFLICT,
+            )
+
+        job.status = IngestionJobStatus.CANCELLED
+        job.current_stage = "cancelled"
+        job.completed_at = timezone.now()
+        job.save(update_fields=["status", "current_stage", "completed_at"])
+        serializer = IngestionJobStatusSerializer(job)
+        return Response(serializer.data, status=status.HTTP_200_OK)
