@@ -1,0 +1,87 @@
+services:
+  redis:
+    image: redis:7
+    container_name: kotoback-redis-dev
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+  postgres:
+    image: postgres:16
+    container_name: kotoback-postgres-dev
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-kotoback_dev}
+      POSTGRES_USER: ${POSTGRES_USER:-kotoback}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-kotoback}
+    ports:
+      - "5433:5432"
+    volumes:
+      - kotoback_postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  web:
+    build:
+      context: ./Kotoback
+    container_name: kotoback-web-dev
+    working_dir: /app
+    command: python manage.py runserver 0.0.0.0:8000
+    ports:
+      - "8000:8000"
+    environment:
+      DJANGO_DEBUG: ${DJANGO_DEBUG:-1}
+      DJANGO_ALLOWED_HOSTS: ${DJANGO_ALLOWED_HOSTS:-localhost,127.0.0.1}
+      DJANGO_SECRET_KEY: ${DJANGO_SECRET_KEY:-django-insecure-dev-only-change-me}
+      POSTGRES_DB: ${POSTGRES_DB:-kotoback_dev}
+      POSTGRES_USER: ${POSTGRES_USER:-kotoback}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-kotoback}
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: 5432
+      USE_SQLITE: ${USE_SQLITE:-0}
+      CELERY_BROKER_URL: redis://redis:6379/0
+      MEDIA_ROOT: /app/media
+    volumes:
+      - ./Kotoback:/app
+      - kotoback_media_data:/app/media
+    depends_on:
+      redis:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+
+  worker:
+    build:
+      context: ./Kotoback
+    container_name: kotoback-worker-dev
+    working_dir: /app
+    command: celery -A Kotoback worker --loglevel=info
+    environment:
+      DJANGO_DEBUG: ${DJANGO_DEBUG:-1}
+      DJANGO_ALLOWED_HOSTS: ${DJANGO_ALLOWED_HOSTS:-localhost,127.0.0.1}
+      DJANGO_SECRET_KEY: ${DJANGO_SECRET_KEY:-django-insecure-dev-only-change-me}
+      POSTGRES_DB: ${POSTGRES_DB:-kotoback_dev}
+      POSTGRES_USER: ${POSTGRES_USER:-kotoback}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-kotoback}
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: 5432
+      USE_SQLITE: ${USE_SQLITE:-0}
+      CELERY_BROKER_URL: redis://redis:6379/0
+      MEDIA_ROOT: /app/media
+    volumes:
+      - ./Kotoback:/app
+      - kotoback_media_data:/app/media
+    depends_on:
+      redis:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+
+volumes:
+  kotoback_postgres_data:
+  kotoback_media_data:
